@@ -9,8 +9,14 @@ from reverse_deepagent.browser.source_maps import (
     SourceMapConsumerActionPlanSpec,
     SourceMapConsumerMaterializationManager,
     SourceMapConsumerMaterializationSpec,
+    SourceMapDebuggerCandidateSelectionManager,
+    SourceMapDebuggerCandidateSelectionSpec,
+    SourceMapDebuggerCandidateReviewManager,
+    SourceMapDebuggerCandidateReviewSpec,
     SourceMapFollowthroughChainReadinessManager,
     SourceMapFollowthroughChainReadinessSpec,
+    SourceMapFollowthroughCompletionCheckpointManager,
+    SourceMapFollowthroughCompletionCheckpointSpec,
     SourceMapFollowthroughDispatchPreflightManager,
     SourceMapFollowthroughDispatchPreflightSpec,
     SourceMapFollowthroughOneStepPlanManager,
@@ -19,12 +25,30 @@ from reverse_deepagent.browser.source_maps import (
     SourceMapFollowthroughReviewSpec,
     SourceMapFollowthroughSurfaceSelectionManager,
     SourceMapFollowthroughSurfaceSelectionSpec,
+    SourceMapHookCandidateRefinementManager,
+    SourceMapHookCandidateRefinementSpec,
+    SourceMapHookCandidateSelectionManager,
+    SourceMapHookCandidateSelectionSpec,
     SourceMapLookupManager,
     SourceMapLookupSpec,
     SourceMapReadinessManager,
     SourceMapReadinessSpec,
+    SourceMapSelectedExecutorApplicationHandoffManager,
+    SourceMapSelectedExecutorApplicationHandoffSpec,
+    SourceMapSelectedExecutorApplyPreflightManager,
+    SourceMapSelectedExecutorApplyPreflightSpec,
+    SourceMapSelectedExecutorApprovalPlanManager,
+    SourceMapSelectedExecutorApprovalPlanSpec,
+    SourceMapSelectedExecutorInputReviewManager,
+    SourceMapSelectedExecutorInputReviewSpec,
+    SourceMapSelectedExecutorResultCheckpointManager,
+    SourceMapSelectedExecutorResultCheckpointSpec,
     SourceMapSourceContentManager,
     SourceMapSourceContentSpec,
+    SourceMapTerminalReviewClosureCheckpointManager,
+    SourceMapTerminalReviewClosureCheckpointSpec,
+    SourceMapTerminalReviewFinalAuditManager,
+    SourceMapTerminalReviewFinalAuditSpec,
     SourceMapTerminalReviewPackageManager,
     SourceMapTerminalReviewPackageSpec,
     SourceMapTypedPayloadPreflightManager,
@@ -705,6 +729,632 @@ def dispatch_source_map_gateway_b(owner: Any, protection_name: str, context: dic
         else:
             status = ExecutionStatus.FAILED
             next_action = "inspect_source_map_readiness_descriptor"
+            actions = []
+        return ProtectionResult(protection_name=protection_name, applied_actions=actions, verification=verification, status=status, artifacts=[artifact], next_action=str(next_action), confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW)
+    return None
+
+
+def dispatch_source_map_gateway_c(owner: Any, protection_name: str, context: dict) -> ProtectionResult | None:
+    """Group C: read-only branches from the first half (hook/debugger candidate review) and second half (selected-executor / terminal-review)."""
+    if owner._is_source_map_hook_candidate_selection_request(protection_name, context):
+        spec = SourceMapHookCandidateSelectionSpec.from_context(context)
+        result = SourceMapHookCandidateSelectionManager().review(spec)
+        descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+        policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+        if not isinstance(policy, dict):
+            policy = {}
+        verification = [
+            f"source_map_hook_candidate_selection_status={result.status}",
+            f"source_map_hook_candidate_selection_source_status={descriptor.get('source_candidates_status', '')}",
+            f"source_map_hook_candidate_selection_candidate_count={descriptor.get('candidate_count', 0)}",
+            f"source_map_hook_candidate_selection_selected_candidate_id={descriptor.get('selected_candidate_id', '')}",
+            f"source_map_hook_candidate_selection_selected_action_id={descriptor.get('selected_action_id', '')}",
+            f"source_map_hook_candidate_selection_ready_for_input_review={descriptor.get('ready_for_selected_executor_input_review', False)}",
+            "source_map_hook_candidate_selection_review_only=True",
+            "source_map_hook_candidate_selection_plan_only=True",
+            "source_map_hook_candidate_selection_handoff_only=True",
+            f"source_map_hook_candidate_selection_browser_started={policy.get('browser_started', False)}",
+            f"source_map_hook_candidate_selection_runtime_evaluated={policy.get('runtime_evaluated', False)}",
+            f"source_map_hook_candidate_selection_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+            f"source_map_hook_candidate_selection_hook_installed={policy.get('hook_installed', False)}",
+            f"source_map_hook_candidate_selection_automatic_hook_installation={policy.get('automatic_hook_installation', False)}",
+            f"source_map_hook_candidate_selection_calls_mcp={policy.get('calls_mcp', False)}",
+            f"source_map_hook_candidate_selection_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+            f"context_keys={sorted(context.keys())}",
+        ]
+        if result.reason:
+            verification.append(f"source_map_hook_candidate_selection_reason={result.reason}")
+        if result.error:
+            verification.append(f"source_map_hook_candidate_selection_error={result.error}")
+        artifact = ArtifactRef(path="virtual://workspace/source-map-hook-candidate-selection.json", kind=ArtifactKind.JSON, description="Native Web runtime review-only Source Map hook candidate selection handoff descriptor.", metadata={"schema_version": "reverse-deepagent.source-map-hook-candidate-selection.v1", "status": result.status, "review_only": True, "plan_only": True, "selection_only": True, "handoff_only": True, "candidate_count": descriptor.get("candidate_count", 0), "selected_candidate_id": descriptor.get("selected_candidate_id", ""), "selected_action_id": descriptor.get("selected_action_id", ""), "selected_consumer": descriptor.get("selected_consumer", ""), "selected_followthrough_review_surface": descriptor.get("selected_followthrough_review_surface", ""), "ready_for_selected_executor_input_review": bool(descriptor.get("ready_for_selected_executor_input_review", False)), "blockers": descriptor.get("blockers", []), "warnings": descriptor.get("warnings", []), "browser_started": False, "runtime_evaluated": False, "cdp_command_sent": False, "hook_installed": False, "automatic_hook_installation": False, "calls_mcp": False, "mobile_runtime_used": False})
+        if result.status == "ready_for_review":
+            status = ExecutionStatus.SUCCESS
+            next_action = descriptor.get("next_action") or "run_source_map_selected_executor_input_review_for_selected_hook_candidate"
+            actions = ["select_source_map_hook_candidate"]
+        elif result.status == "blocked":
+            status = ExecutionStatus.PARTIAL
+            next_action = descriptor.get("next_action") or "resolve_source_map_hook_candidate_selection_blockers"
+            actions = []
+        else:
+            status = ExecutionStatus.FAILED
+            next_action = "inspect_source_map_hook_candidate_selection_descriptor"
+            actions = []
+        return ProtectionResult(protection_name=protection_name, applied_actions=actions, verification=verification, status=status, artifacts=[artifact], next_action=str(next_action), confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW)
+    if owner._is_source_map_hook_candidate_refinement_request(protection_name, context):
+        spec = SourceMapHookCandidateRefinementSpec.from_context(context)
+        result = SourceMapHookCandidateRefinementManager().review(spec)
+        descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+        policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+        if not isinstance(policy, dict):
+            policy = {}
+        candidates = descriptor.get("candidates") if isinstance(descriptor.get("candidates"), list) else []
+        source_status = descriptor.get("source_status") if isinstance(descriptor.get("source_status"), dict) else {}
+        verification = [
+            f"source_map_hook_candidates_status={result.status}",
+            f"source_map_hook_candidates_bundler={descriptor.get('bundler_kind', 'unknown')}",
+            f"source_map_hook_candidates_symbol={descriptor.get('requested_symbol', '')}",
+            f"source_map_hook_candidates_source_scope_candidate_count={descriptor.get('source_scope_candidate_count', 0)}",
+            f"source_map_hook_candidates_candidate_count={descriptor.get('candidate_count', 0)}",
+            f"source_map_hook_candidates_ready_for_install_review_count={descriptor.get('ready_for_hook_install_review_count', 0)}",
+            f"source_map_hook_candidates_typed_hook_payload_ready={source_status.get('typed_hook_payload_ready', False)}",
+            "source_map_hook_candidates_review_only=True",
+            "source_map_hook_candidates_plan_only=True",
+            f"source_map_hook_candidates_browser_started={policy.get('browser_started', False)}",
+            f"source_map_hook_candidates_runtime_evaluated={policy.get('runtime_evaluated', False)}",
+            f"source_map_hook_candidates_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+            f"source_map_hook_candidates_hook_installed={policy.get('hook_installed', False)}",
+            f"source_map_hook_candidates_automatic_hook_installation={policy.get('automatic_hook_installation', False)}",
+            f"source_map_hook_candidates_calls_mcp={policy.get('calls_mcp', False)}",
+            f"source_map_hook_candidates_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+            f"context_keys={sorted(context.keys())}",
+        ]
+        if result.reason:
+            verification.append(f"source_map_hook_candidates_reason={result.reason}")
+        if result.error:
+            verification.append(f"source_map_hook_candidates_error={result.error}")
+        artifact = ArtifactRef(path="virtual://workspace/source-map-hook-candidates.json", kind=ArtifactKind.JSON, description="Native Web runtime review-only Source Map hook candidate refinement descriptor.", metadata={"schema_version": "reverse-deepagent.source-map-hook-candidates.v1", "status": result.status, "review_only": True, "plan_only": True, "candidate_refinement_only": True, "requested_symbol": descriptor.get("requested_symbol", ""), "bundler_kind": descriptor.get("bundler_kind", "unknown"), "source_scope_candidate_count": descriptor.get("source_scope_candidate_count", 0), "module_candidate_count": descriptor.get("module_candidate_count", 0), "candidate_count": descriptor.get("candidate_count", 0), "ready_for_hook_install_review_count": descriptor.get("ready_for_hook_install_review_count", 0), "candidate_ids": [str(item.get("candidate_id")) for item in candidates if isinstance(item, dict) and item.get("candidate_id")], "blockers": descriptor.get("blockers", []), "warnings": descriptor.get("warnings", []), "browser_started": False, "runtime_evaluated": False, "cdp_command_sent": False, "hook_installed": False, "automatic_hook_installation": False, "calls_mcp": False, "mobile_runtime_used": False})
+        if result.status == "ready_for_review":
+            status = ExecutionStatus.SUCCESS
+            next_action = descriptor.get("next_action") or "review_source_map_hook_candidates_before_selected_hook_install"
+            actions = ["refine_source_map_hook_candidates"]
+        elif result.status == "blocked":
+            status = ExecutionStatus.PARTIAL
+            next_action = descriptor.get("next_action") or "resolve_source_map_hook_candidate_refinement_blockers"
+            actions = []
+        else:
+            status = ExecutionStatus.FAILED
+            next_action = "inspect_source_map_hook_candidate_refinement_descriptor"
+            actions = []
+        return ProtectionResult(protection_name=protection_name, applied_actions=actions, verification=verification, status=status, artifacts=[artifact], next_action=str(next_action), confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW)
+    if owner._is_source_map_debugger_candidate_selection_request(protection_name, context):
+        spec = SourceMapDebuggerCandidateSelectionSpec.from_context(context)
+        result = SourceMapDebuggerCandidateSelectionManager().review(spec)
+        descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+        policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+        if not isinstance(policy, dict):
+            policy = {}
+        verification = [
+            f"source_map_debugger_candidate_selection_status={result.status}",
+            f"source_map_debugger_candidate_selection_source_status={descriptor.get('source_candidates_status', '')}",
+            f"source_map_debugger_candidate_selection_candidate_count={descriptor.get('candidate_count', 0)}",
+            f"source_map_debugger_candidate_selection_selected_candidate_id={descriptor.get('selected_candidate_id', '')}",
+            f"source_map_debugger_candidate_selection_selected_action_id={descriptor.get('selected_action_id', '')}",
+            f"source_map_debugger_candidate_selection_ready_for_input_review={descriptor.get('ready_for_selected_executor_input_review', False)}",
+            "source_map_debugger_candidate_selection_review_only=True",
+            "source_map_debugger_candidate_selection_plan_only=True",
+            "source_map_debugger_candidate_selection_handoff_only=True",
+            f"source_map_debugger_candidate_selection_browser_started={policy.get('browser_started', False)}",
+            f"source_map_debugger_candidate_selection_runtime_evaluated={policy.get('runtime_evaluated', False)}",
+            f"source_map_debugger_candidate_selection_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+            f"source_map_debugger_candidate_selection_debugger_execution_performed={policy.get('debugger_execution_performed', False)}",
+            f"source_map_debugger_candidate_selection_breakpoint_installed={policy.get('breakpoint_installed', False)}",
+            f"source_map_debugger_candidate_selection_automatic_debugger_continuation={policy.get('automatic_debugger_continuation', False)}",
+            f"source_map_debugger_candidate_selection_calls_mcp={policy.get('calls_mcp', False)}",
+            f"source_map_debugger_candidate_selection_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+            f"context_keys={sorted(context.keys())}",
+        ]
+        if result.reason:
+            verification.append(f"source_map_debugger_candidate_selection_reason={result.reason}")
+        if result.error:
+            verification.append(f"source_map_debugger_candidate_selection_error={result.error}")
+        artifact = ArtifactRef(path="virtual://workspace/source-map-debugger-candidate-selection.json", kind=ArtifactKind.JSON, description="Native Web runtime review-only Source Map debugger candidate selection handoff descriptor.", metadata={"schema_version": "reverse-deepagent.source-map-debugger-candidate-selection.v1", "status": result.status, "review_only": True, "plan_only": True, "selection_only": True, "handoff_only": True, "candidate_count": descriptor.get("candidate_count", 0), "selected_candidate_id": descriptor.get("selected_candidate_id", ""), "selected_action_id": descriptor.get("selected_action_id", ""), "selected_consumer": descriptor.get("selected_consumer", ""), "selected_followthrough_review_surface": descriptor.get("selected_followthrough_review_surface", ""), "ready_for_selected_executor_input_review": bool(descriptor.get("ready_for_selected_executor_input_review", False)), "blockers": descriptor.get("blockers", []), "warnings": descriptor.get("warnings", []), "browser_started": False, "runtime_evaluated": False, "cdp_command_sent": False, "debugger_execution_performed": False, "breakpoint_installed": False, "automatic_debugger_continuation": False, "calls_mcp": False, "mobile_runtime_used": False})
+        if result.status == "ready_for_review":
+            status = ExecutionStatus.SUCCESS
+            next_action = descriptor.get("next_action") or "run_source_map_selected_executor_input_review_for_selected_debugger_candidate"
+            actions = ["select_source_map_debugger_candidate"]
+        elif result.status == "blocked":
+            status = ExecutionStatus.PARTIAL
+            next_action = descriptor.get("next_action") or "resolve_source_map_debugger_candidate_selection_blockers"
+            actions = []
+        else:
+            status = ExecutionStatus.FAILED
+            next_action = "inspect_source_map_debugger_candidate_selection_descriptor"
+            actions = []
+        return ProtectionResult(protection_name=protection_name, applied_actions=actions, verification=verification, status=status, artifacts=[artifact], next_action=str(next_action), confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW)
+    if owner._is_source_map_debugger_candidate_review_request(protection_name, context):
+        spec = SourceMapDebuggerCandidateReviewSpec.from_context(context)
+        result = SourceMapDebuggerCandidateReviewManager().review(spec)
+        descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+        policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+        if not isinstance(policy, dict):
+            policy = {}
+        candidates = descriptor.get("candidates") if isinstance(descriptor.get("candidates"), list) else []
+        source_status = descriptor.get("source_status") if isinstance(descriptor.get("source_status"), dict) else {}
+        verification = [
+            f"source_map_debugger_candidates_status={result.status}",
+            f"source_map_debugger_candidates_bundler={descriptor.get('bundler_kind', 'unknown')}",
+            f"source_map_debugger_candidates_symbol={descriptor.get('requested_symbol', '')}",
+            f"source_map_debugger_candidates_source_scope_candidate_count={descriptor.get('source_scope_candidate_count', 0)}",
+            f"source_map_debugger_candidates_lookup_candidate_count={descriptor.get('lookup_candidate_count', 0)}",
+            f"source_map_debugger_candidates_candidate_count={descriptor.get('candidate_count', 0)}",
+            f"source_map_debugger_candidates_ready_for_location_review_count={descriptor.get('ready_for_debugger_location_review_count', 0)}",
+            f"source_map_debugger_candidates_typed_debugger_payload_ready={source_status.get('typed_debugger_payload_ready', False)}",
+            "source_map_debugger_candidates_review_only=True",
+            "source_map_debugger_candidates_plan_only=True",
+            f"source_map_debugger_candidates_browser_started={policy.get('browser_started', False)}",
+            f"source_map_debugger_candidates_runtime_evaluated={policy.get('runtime_evaluated', False)}",
+            f"source_map_debugger_candidates_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+            f"source_map_debugger_candidates_debugger_execution_performed={policy.get('debugger_execution_performed', False)}",
+            f"source_map_debugger_candidates_breakpoint_installed={policy.get('breakpoint_installed', False)}",
+            f"source_map_debugger_candidates_automatic_debugger_continuation={policy.get('automatic_debugger_continuation', False)}",
+            f"source_map_debugger_candidates_calls_mcp={policy.get('calls_mcp', False)}",
+            f"source_map_debugger_candidates_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+            f"context_keys={sorted(context.keys())}",
+        ]
+        if result.reason:
+            verification.append(f"source_map_debugger_candidates_reason={result.reason}")
+        if result.error:
+            verification.append(f"source_map_debugger_candidates_error={result.error}")
+        artifact = ArtifactRef(path="virtual://workspace/source-map-debugger-candidates.json", kind=ArtifactKind.JSON, description="Native Web runtime review-only Source Map debugger location candidate descriptor.", metadata={"schema_version": "reverse-deepagent.source-map-debugger-candidates.v1", "status": result.status, "review_only": True, "plan_only": True, "candidate_review_only": True, "requested_symbol": descriptor.get("requested_symbol", ""), "bundler_kind": descriptor.get("bundler_kind", "unknown"), "source_scope_candidate_count": descriptor.get("source_scope_candidate_count", 0), "lookup_candidate_count": descriptor.get("lookup_candidate_count", 0), "candidate_count": descriptor.get("candidate_count", 0), "ready_for_debugger_location_review_count": descriptor.get("ready_for_debugger_location_review_count", 0), "candidate_ids": [str(item.get("candidate_id")) for item in candidates if isinstance(item, dict) and item.get("candidate_id")], "blockers": descriptor.get("blockers", []), "warnings": descriptor.get("warnings", []), "browser_started": False, "runtime_evaluated": False, "cdp_command_sent": False, "debugger_execution_performed": False, "breakpoint_installed": False, "automatic_debugger_continuation": False, "calls_mcp": False, "mobile_runtime_used": False})
+        if result.status == "ready_for_review":
+            status = ExecutionStatus.SUCCESS
+            next_action = descriptor.get("next_action") or "review_source_map_debugger_candidates_before_selected_debugger_apply"
+            actions = ["review_source_map_debugger_candidates"]
+        elif result.status == "blocked":
+            status = ExecutionStatus.PARTIAL
+            next_action = descriptor.get("next_action") or "resolve_source_map_debugger_candidate_review_blockers"
+            actions = []
+        else:
+            status = ExecutionStatus.FAILED
+            next_action = "inspect_source_map_debugger_candidate_review_descriptor"
+            actions = []
+        return ProtectionResult(protection_name=protection_name, applied_actions=actions, verification=verification, status=status, artifacts=[artifact], next_action=str(next_action), confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW)
+    if owner._is_source_map_selected_executor_application_handoff_request(protection_name, context):
+        spec = SourceMapSelectedExecutorApplicationHandoffSpec.from_context(context)
+        result = SourceMapSelectedExecutorApplicationHandoffManager().review(spec)
+        descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+        review_input = descriptor.get("application_review_input") if isinstance(descriptor.get("application_review_input"), dict) else {}
+        policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+        if not isinstance(policy, dict):
+            policy = {}
+        verification = [
+            f"source_map_selected_executor_application_handoff_status={result.status}",
+            f"source_map_selected_executor_application_handoff_selected_action_id={descriptor.get('selected_action_id', '')}",
+            f"source_map_selected_executor_application_handoff_selected_consumer={descriptor.get('selected_consumer', '')}",
+            f"source_map_selected_executor_application_handoff_selected_gate={descriptor.get('selected_review_gate', '')}",
+            f"source_map_selected_executor_application_handoff_application_surface={descriptor.get('application_surface', '')}",
+            f"source_map_selected_executor_application_handoff_application_input_key={descriptor.get('application_input_key', '')}",
+            f"source_map_selected_executor_application_handoff_ready_for_application_review={descriptor.get('ready_for_application_review', False)}",
+            f"source_map_selected_executor_application_handoff_ready_to_execute_now={descriptor.get('ready_to_execute_now', False)}",
+            f"source_map_selected_executor_application_handoff_approval_record_verified={descriptor.get('approval_record_verified', False)}",
+            f"source_map_selected_executor_application_handoff_executor_input_ready={descriptor.get('executor_input_ready', False)}",
+            f"source_map_selected_executor_application_handoff_source_digest={descriptor.get('source_apply_preflight_digest_sha256', '')}",
+            f"source_map_selected_executor_application_handoff_future_result_artifact={descriptor.get('future_result_artifact', '')}",
+            "source_map_selected_executor_application_handoff_review_only=True",
+            "source_map_selected_executor_application_handoff_plan_only=True",
+            "source_map_selected_executor_application_handoff_handoff_only=True",
+            f"source_map_selected_executor_application_handoff_browser_started={policy.get('browser_started', False)}",
+            f"source_map_selected_executor_application_handoff_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+            f"source_map_selected_executor_application_handoff_runtime_evaluated={policy.get('runtime_evaluated', False)}",
+            f"source_map_selected_executor_application_handoff_logpoint_installed={policy.get('logpoint_installed', policy.get('source_logpoint_installed', False))}",
+            f"source_map_selected_executor_application_handoff_hook_installed={policy.get('hook_installed', False)}",
+            f"source_map_selected_executor_application_handoff_rebuild_executed={policy.get('rebuild_executed', False)}",
+            f"source_map_selected_executor_application_handoff_surface_executor_invoked={policy.get('surface_executor_invoked', False)}",
+            f"source_map_selected_executor_application_handoff_calls_mcp={policy.get('calls_mcp', False)}",
+            f"source_map_selected_executor_application_handoff_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+            f"context_keys={sorted(context.keys())}",
+        ]
+        if result.reason:
+            verification.append(f"source_map_selected_executor_application_handoff_reason={result.reason}")
+        if result.error:
+            verification.append(f"source_map_selected_executor_application_handoff_error={result.error}")
+        artifact = ArtifactRef(path="virtual://workspace/source-map-selected-executor-application-handoff.json", kind=ArtifactKind.JSON, description="Native Web runtime review-only Source Map selected executor application handoff descriptor.", metadata={"status": result.status, "selected_action_id": descriptor.get("selected_action_id", ""), "selected_consumer": descriptor.get("selected_consumer", ""), "selected_review_gate": descriptor.get("selected_review_gate", ""), "application_surface": descriptor.get("application_surface", ""), "application_review_action": descriptor.get("application_review_action", ""), "application_input_key": descriptor.get("application_input_key", ""), "required_approval_flags": descriptor.get("required_approval_flags", []), "future_action": descriptor.get("future_action", ""), "future_result_artifact": descriptor.get("future_result_artifact", ""), "source_apply_preflight_digest_sha256": descriptor.get("source_apply_preflight_digest_sha256", ""), "application_review_input_schema_version": review_input.get("schema_version", ""), "approval_record_verified": bool(descriptor.get("approval_record_verified", False)), "executor_input_ready": bool(descriptor.get("executor_input_ready", False)), "ready_for_application_review": bool(descriptor.get("ready_for_application_review", False)), "ready_to_execute_now": False, "review_only": True, "plan_only": True, "handoff_only": True, "application_handoff_only": True, "browser_started": False, "cdp_command_sent": False, "runtime_evaluated": False, "logpoint_installed": False, "hook_installed": False, "rebuild_executed": False, "surface_executor_invoked": False, "calls_mcp": False, "mobile_runtime_used": False})
+        if result.status == "ready_for_review":
+            status = ExecutionStatus.SUCCESS
+            next_action = descriptor.get("next_action") or descriptor.get("application_review_action") or "review_source_map_selected_executor_application"
+            actions = ["review_source_map_selected_executor_application_handoff"]
+        elif result.status == "blocked":
+            status = ExecutionStatus.PARTIAL
+            next_action = descriptor.get("next_action") or "provide_ready_source_map_selected_executor_apply_preflight"
+            actions = []
+        else:
+            status = ExecutionStatus.FAILED
+            next_action = "inspect_source_map_selected_executor_application_handoff_descriptor"
+            actions = []
+        return ProtectionResult(protection_name=protection_name, applied_actions=actions, verification=verification, status=status, artifacts=[artifact], next_action=str(next_action), confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW)
+    if owner._is_source_map_selected_executor_result_checkpoint_request(protection_name, context):
+        spec = SourceMapSelectedExecutorResultCheckpointSpec.from_context(context)
+        result = SourceMapSelectedExecutorResultCheckpointManager().review(spec)
+        descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+        checkpoint_review = descriptor.get("checkpoint_review") if isinstance(descriptor.get("checkpoint_review"), dict) else {}
+        observed = descriptor.get("observed_application_side_effects") if isinstance(descriptor.get("observed_application_side_effects"), dict) else {}
+        policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+        if not isinstance(policy, dict):
+            policy = {}
+        verification = [
+            f"source_map_selected_executor_result_checkpoint_status={result.status}",
+            f"source_map_selected_executor_result_checkpoint_selected_action_id={descriptor.get('selected_action_id', '')}",
+            f"source_map_selected_executor_result_checkpoint_selected_consumer={descriptor.get('selected_consumer', '')}",
+            f"source_map_selected_executor_result_checkpoint_selected_gate={descriptor.get('selected_review_gate', '')}",
+            f"source_map_selected_executor_result_checkpoint_application_surface={descriptor.get('application_surface', '')}",
+            f"source_map_selected_executor_result_checkpoint_application_result_status={descriptor.get('application_result_status', '')}",
+            f"source_map_selected_executor_result_checkpoint_application_result_verified={descriptor.get('application_result_verified', False)}",
+            f"source_map_selected_executor_result_checkpoint_ready_for_next_explicit_review={descriptor.get('ready_for_next_explicit_review', False)}",
+            f"source_map_selected_executor_result_checkpoint_ready_to_execute_now={descriptor.get('ready_to_execute_now', False)}",
+            f"source_map_selected_executor_result_checkpoint_result_success_key={descriptor.get('result_success_key', '')}",
+            f"source_map_selected_executor_result_checkpoint_result_success={descriptor.get('result_success', False)}",
+            f"source_map_selected_executor_result_checkpoint_result_digest={descriptor.get('application_result_digest_sha256', '')}",
+            f"source_map_selected_executor_result_checkpoint_handoff_verified={descriptor.get('application_handoff_verified', False)}",
+            f"source_map_selected_executor_result_checkpoint_review_kind={checkpoint_review.get('result_kind', '')}",
+            f"source_map_selected_executor_result_checkpoint_terminal_candidate={checkpoint_review.get('terminal_checkpoint_candidate', False)}",
+            "source_map_selected_executor_result_checkpoint_review_only=True",
+            "source_map_selected_executor_result_checkpoint_checkpoint_only=True",
+            f"source_map_selected_executor_result_checkpoint_observed_browser_started={observed.get('browser_started', False)}",
+            f"source_map_selected_executor_result_checkpoint_observed_cdp_command_sent={observed.get('cdp_command_sent', False)}",
+            f"source_map_selected_executor_result_checkpoint_observed_runtime_evaluated={observed.get('runtime_evaluated', False)}",
+            f"source_map_selected_executor_result_checkpoint_browser_started_by_checkpoint={policy.get('browser_started', False)}",
+            f"source_map_selected_executor_result_checkpoint_cdp_command_sent_by_checkpoint={policy.get('cdp_command_sent', False)}",
+            f"source_map_selected_executor_result_checkpoint_runtime_evaluated_by_checkpoint={policy.get('runtime_evaluated', False)}",
+            f"source_map_selected_executor_result_checkpoint_calls_mcp={policy.get('calls_mcp', False)}",
+            f"source_map_selected_executor_result_checkpoint_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+            f"context_keys={sorted(context.keys())}",
+        ]
+        if result.reason:
+            verification.append(f"source_map_selected_executor_result_checkpoint_reason={result.reason}")
+        if result.error:
+            verification.append(f"source_map_selected_executor_result_checkpoint_error={result.error}")
+        artifact = ArtifactRef(path="virtual://workspace/source-map-selected-executor-result-checkpoint.json", kind=ArtifactKind.JSON, description="Native Web runtime review-only Source Map selected executor application result checkpoint.", metadata={"status": result.status, "selected_action_id": descriptor.get("selected_action_id", ""), "selected_consumer": descriptor.get("selected_consumer", ""), "selected_review_gate": descriptor.get("selected_review_gate", ""), "application_surface": descriptor.get("application_surface", ""), "application_result_artifact": descriptor.get("application_result_artifact", ""), "application_result_status": descriptor.get("application_result_status", ""), "application_result_digest_sha256": descriptor.get("application_result_digest_sha256", ""), "application_result_verified": bool(descriptor.get("application_result_verified", False)), "application_handoff_verified": bool(descriptor.get("application_handoff_verified", False)), "result_success_key": descriptor.get("result_success_key", ""), "result_success": bool(descriptor.get("result_success", False)), "ready_for_followthrough_checkpoint_review": bool(descriptor.get("ready_for_followthrough_checkpoint_review", False)), "ready_for_next_explicit_review": bool(descriptor.get("ready_for_next_explicit_review", False)), "ready_to_execute_now": False, "execute_next_automatically": False, "automatic_followthrough_supported": False, "review_only": True, "checkpoint_only": True, "browser_started_by_checkpoint": False, "cdp_command_sent_by_checkpoint": False, "runtime_evaluated_by_checkpoint": False, "calls_mcp": False, "mobile_runtime_used": False})
+        if result.status == "ready_for_review":
+            status = ExecutionStatus.SUCCESS
+            next_action = descriptor.get("next_action") or "review_source_map_selected_executor_result_checkpoint"
+            actions = ["review_source_map_selected_executor_result_checkpoint"]
+        elif result.status == "blocked":
+            status = ExecutionStatus.PARTIAL
+            next_action = descriptor.get("next_action") or "provide_source_map_selected_executor_application_result"
+            actions = []
+        else:
+            status = ExecutionStatus.FAILED
+            next_action = "inspect_source_map_selected_executor_result_checkpoint_descriptor"
+            actions = []
+        return ProtectionResult(protection_name=protection_name, applied_actions=actions, verification=verification, status=status, artifacts=[artifact], next_action=str(next_action), confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW)
+    if owner._is_source_map_followthrough_completion_checkpoint_request(protection_name, context):
+        spec = SourceMapFollowthroughCompletionCheckpointSpec.from_context(context)
+        result = SourceMapFollowthroughCompletionCheckpointManager().review(spec)
+        descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+        completion_review = descriptor.get("completion_review") if isinstance(descriptor.get("completion_review"), dict) else {}
+        policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+        if not isinstance(policy, dict):
+            policy = {}
+        verification = [
+            f"source_map_followthrough_completion_checkpoint_status={result.status}",
+            f"source_map_followthrough_completion_checkpoint_selected_action_id={descriptor.get('selected_action_id', '')}",
+            f"source_map_followthrough_completion_checkpoint_selected_consumer={descriptor.get('selected_consumer', '')}",
+            f"source_map_followthrough_completion_checkpoint_selected_gate={descriptor.get('selected_review_gate', '')}",
+            f"source_map_followthrough_completion_checkpoint_application_surface={descriptor.get('application_surface', '')}",
+            f"source_map_followthrough_completion_checkpoint_completion_status={descriptor.get('completion_status', '')}",
+            f"source_map_followthrough_completion_checkpoint_terminal_review_candidate={descriptor.get('terminal_review_candidate', False)}",
+            f"source_map_followthrough_completion_checkpoint_followup_required={descriptor.get('followup_required', False)}",
+            f"source_map_followthrough_completion_checkpoint_ready_for_completion_review={descriptor.get('ready_for_completion_review', False)}",
+            f"source_map_followthrough_completion_checkpoint_ready_for_next_explicit_review={descriptor.get('ready_for_next_explicit_review', False)}",
+            f"source_map_followthrough_completion_checkpoint_ready_to_execute_now={descriptor.get('ready_to_execute_now', False)}",
+            f"source_map_followthrough_completion_checkpoint_recommended_review_action={completion_review.get('recommended_review_action', '')}",
+            f"source_map_followthrough_completion_checkpoint_source_result_checkpoint_digest={descriptor.get('source_result_checkpoint_digest_sha256', '')}",
+            f"source_map_followthrough_completion_checkpoint_source_chain_readiness_digest={descriptor.get('source_chain_readiness_digest_sha256', '')}",
+            "source_map_followthrough_completion_checkpoint_review_only=True",
+            "source_map_followthrough_completion_checkpoint_checkpoint_only=True",
+            "source_map_followthrough_completion_checkpoint_completion_checkpoint_only=True",
+            f"source_map_followthrough_completion_checkpoint_browser_started_by_completion={policy.get('browser_started', False)}",
+            f"source_map_followthrough_completion_checkpoint_cdp_command_sent_by_completion={policy.get('cdp_command_sent', False)}",
+            f"source_map_followthrough_completion_checkpoint_runtime_evaluated_by_completion={policy.get('runtime_evaluated', False)}",
+            f"source_map_followthrough_completion_checkpoint_calls_mcp={policy.get('calls_mcp', False)}",
+            f"source_map_followthrough_completion_checkpoint_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+            f"context_keys={sorted(context.keys())}",
+        ]
+        if result.reason:
+            verification.append(f"source_map_followthrough_completion_checkpoint_reason={result.reason}")
+        if result.error:
+            verification.append(f"source_map_followthrough_completion_checkpoint_error={result.error}")
+        artifact = ArtifactRef(path="virtual://workspace/source-map-followthrough-completion-checkpoint.json", kind=ArtifactKind.JSON, description="Native Web runtime read-only Source Map follow-through completion / next-action checkpoint.", metadata={"status": result.status, "selected_action_id": descriptor.get("selected_action_id", ""), "selected_consumer": descriptor.get("selected_consumer", ""), "selected_review_gate": descriptor.get("selected_review_gate", ""), "application_surface": descriptor.get("application_surface", ""), "completion_status": descriptor.get("completion_status", ""), "terminal_review_candidate": bool(descriptor.get("terminal_review_candidate", False)), "followup_required": bool(descriptor.get("followup_required", False)), "recommended_review_action": completion_review.get("recommended_review_action", ""), "source_result_checkpoint_digest_sha256": descriptor.get("source_result_checkpoint_digest_sha256", ""), "source_chain_readiness_digest_sha256": descriptor.get("source_chain_readiness_digest_sha256", ""), "ready_for_completion_review": bool(descriptor.get("ready_for_completion_review", False)), "ready_for_next_explicit_review": bool(descriptor.get("ready_for_next_explicit_review", False)), "ready_to_execute_now": False, "execute_next_automatically": False, "automatic_followthrough_supported": False, "review_only": True, "checkpoint_only": True, "completion_checkpoint_only": True, "browser_started_by_completion": False, "cdp_command_sent_by_completion": False, "runtime_evaluated_by_completion": False, "calls_mcp": False, "mobile_runtime_used": False})
+        if result.status == "ready_for_review":
+            status = ExecutionStatus.SUCCESS
+            next_action = descriptor.get("next_action") or completion_review.get("recommended_review_action") or "review_source_map_followthrough_completion_checkpoint"
+            actions = ["review_source_map_followthrough_completion_checkpoint"]
+        elif result.status == "blocked":
+            status = ExecutionStatus.PARTIAL
+            next_action = descriptor.get("next_action") or "provide_source_map_selected_executor_result_checkpoint"
+            actions = []
+        else:
+            status = ExecutionStatus.FAILED
+            next_action = "inspect_source_map_followthrough_completion_checkpoint_descriptor"
+            actions = []
+        return ProtectionResult(protection_name=protection_name, applied_actions=actions, verification=verification, status=status, artifacts=[artifact], next_action=str(next_action), confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW)
+    if owner._is_source_map_terminal_review_final_audit_request(protection_name, context):
+        spec = SourceMapTerminalReviewFinalAuditSpec.from_context(context)
+        result = SourceMapTerminalReviewFinalAuditManager().review(spec)
+        descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+        rollup = descriptor.get("final_audit_rollup") if isinstance(descriptor.get("final_audit_rollup"), dict) else {}
+        policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+        if not isinstance(policy, dict):
+            policy = {}
+        verification = [
+            f"source_map_terminal_review_final_audit_status={result.status}",
+            f"source_map_terminal_review_final_audit_selected_action_id={descriptor.get('selected_action_id', '')}",
+            f"source_map_terminal_review_final_audit_selected_consumer={descriptor.get('selected_consumer', '')}",
+            f"source_map_terminal_review_final_audit_closure_status={descriptor.get('closure_status', '')}",
+            f"source_map_terminal_review_final_audit_final_audit_status={descriptor.get('final_audit_status', '')}",
+            f"source_map_terminal_review_final_audit_terminal_review_candidate={descriptor.get('terminal_review_candidate', False)}",
+            f"source_map_terminal_review_final_audit_followup_required={descriptor.get('followup_required', False)}",
+            f"source_map_terminal_review_final_audit_ready_for_final_audit_review={descriptor.get('ready_for_final_audit_review', False)}",
+            f"source_map_terminal_review_final_audit_ready_to_execute_now={descriptor.get('ready_to_execute_now', False)}",
+            f"source_map_terminal_review_final_audit_recommended_review_action={descriptor.get('recommended_review_action', '')}",
+            f"source_map_terminal_review_final_audit_observed_review_action={descriptor.get('observed_review_action', '')}",
+            f"source_map_terminal_review_final_audit_source_closure_digest={descriptor.get('source_closure_checkpoint_digest_sha256', '')}",
+            f"source_map_terminal_review_final_audit_source_package_digest={descriptor.get('source_terminal_review_package_digest_sha256', '')}",
+            "source_map_terminal_review_final_audit_review_only=True",
+            "source_map_terminal_review_final_audit_audit_rollup_only=True",
+            "source_map_terminal_review_final_audit_final_audit_only=True",
+            f"source_map_terminal_review_final_audit_recommended_action_executed_by_rollup={descriptor.get('recommended_action_executed_by_rollup', False)}",
+            f"source_map_terminal_review_final_audit_browser_started_by_rollup={policy.get('browser_started', False)}",
+            f"source_map_terminal_review_final_audit_cdp_command_sent_by_rollup={policy.get('cdp_command_sent', False)}",
+            f"source_map_terminal_review_final_audit_runtime_evaluated_by_rollup={policy.get('runtime_evaluated', False)}",
+            f"source_map_terminal_review_final_audit_calls_mcp={policy.get('calls_mcp', False)}",
+            f"source_map_terminal_review_final_audit_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+            f"context_keys={sorted(context.keys())}",
+        ]
+        if result.reason:
+            verification.append(f"source_map_terminal_review_final_audit_reason={result.reason}")
+        if result.error:
+            verification.append(f"source_map_terminal_review_final_audit_error={result.error}")
+        artifact = ArtifactRef(path="virtual://workspace/source-map-terminal-review-final-audit.json", kind=ArtifactKind.JSON, description="Native Web runtime read-only Source Map terminal review closure summary / final audit rollup.", metadata={"status": result.status, "selected_action_id": descriptor.get("selected_action_id", ""), "selected_consumer": descriptor.get("selected_consumer", ""), "closure_status": descriptor.get("closure_status", ""), "final_audit_status": descriptor.get("final_audit_status", ""), "terminal_review_candidate": bool(descriptor.get("terminal_review_candidate", False)), "followup_required": bool(descriptor.get("followup_required", False)), "recommended_review_action": descriptor.get("recommended_review_action", ""), "observed_review_action": descriptor.get("observed_review_action", ""), "source_closure_checkpoint_digest_sha256": descriptor.get("source_closure_checkpoint_digest_sha256", ""), "source_terminal_review_package_digest_sha256": descriptor.get("source_terminal_review_package_digest_sha256", ""), "final_audit_rollup_schema_version": rollup.get("schema_version", ""), "ready_for_final_audit_review": bool(descriptor.get("ready_for_final_audit_review", False)), "ready_to_execute_now": False, "execute_next_automatically": False, "automatic_followthrough_supported": False, "recommended_action_executed_by_rollup": False, "review_only": True, "audit_rollup_only": True, "final_audit_only": True, "browser_started_by_rollup": False, "cdp_command_sent_by_rollup": False, "runtime_evaluated_by_rollup": False, "calls_mcp": False, "mobile_runtime_used": False})
+        if result.status == "ready_for_review":
+            status = ExecutionStatus.SUCCESS
+            next_action = descriptor.get("next_action") or "review_source_map_terminal_review_final_audit"
+            actions = ["review_source_map_terminal_review_final_audit"]
+        elif result.status == "blocked":
+            status = ExecutionStatus.PARTIAL
+            next_action = descriptor.get("next_action") or "provide_source_map_terminal_review_closure_checkpoint"
+            actions = []
+        else:
+            status = ExecutionStatus.FAILED
+            next_action = "inspect_source_map_terminal_review_final_audit_descriptor"
+            actions = []
+        return ProtectionResult(protection_name=protection_name, applied_actions=actions, verification=verification, status=status, artifacts=[artifact], next_action=str(next_action), confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW)
+    if owner._is_source_map_terminal_review_closure_checkpoint_request(protection_name, context):
+        spec = SourceMapTerminalReviewClosureCheckpointSpec.from_context(context)
+        result = SourceMapTerminalReviewClosureCheckpointManager().review(spec)
+        descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+        closure_audit = descriptor.get("closure_audit") if isinstance(descriptor.get("closure_audit"), dict) else {}
+        policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+        if not isinstance(policy, dict):
+            policy = {}
+        verification = [
+            f"source_map_terminal_review_closure_checkpoint_status={result.status}",
+            f"source_map_terminal_review_closure_checkpoint_selected_action_id={descriptor.get('selected_action_id', '')}",
+            f"source_map_terminal_review_closure_checkpoint_selected_consumer={descriptor.get('selected_consumer', '')}",
+            f"source_map_terminal_review_closure_checkpoint_completion_status={descriptor.get('completion_status', '')}",
+            f"source_map_terminal_review_closure_checkpoint_closure_status={descriptor.get('closure_status', '')}",
+            f"source_map_terminal_review_closure_checkpoint_terminal_review_candidate={descriptor.get('terminal_review_candidate', False)}",
+            f"source_map_terminal_review_closure_checkpoint_followup_required={descriptor.get('followup_required', False)}",
+            f"source_map_terminal_review_closure_checkpoint_ready_for_closure_audit_review={descriptor.get('ready_for_closure_audit_review', False)}",
+            f"source_map_terminal_review_closure_checkpoint_ready_to_execute_now={descriptor.get('ready_to_execute_now', False)}",
+            f"source_map_terminal_review_closure_checkpoint_recommended_review_action={descriptor.get('recommended_review_action', '')}",
+            f"source_map_terminal_review_closure_checkpoint_observed_review_action={descriptor.get('observed_review_action', '')}",
+            f"source_map_terminal_review_closure_checkpoint_source_package_digest={descriptor.get('source_terminal_review_package_digest_sha256', '')}",
+            f"source_map_terminal_review_closure_checkpoint_observed_result_digest={descriptor.get('source_observed_result_digest_sha256', '')}",
+            "source_map_terminal_review_closure_checkpoint_review_only=True",
+            "source_map_terminal_review_closure_checkpoint_audit_checkpoint_only=True",
+            "source_map_terminal_review_closure_checkpoint_closure_checkpoint_only=True",
+            f"source_map_terminal_review_closure_checkpoint_recommended_action_executed_by_checkpoint={descriptor.get('recommended_action_executed_by_checkpoint', False)}",
+            f"source_map_terminal_review_closure_checkpoint_browser_started_by_checkpoint={policy.get('browser_started', False)}",
+            f"source_map_terminal_review_closure_checkpoint_cdp_command_sent_by_checkpoint={policy.get('cdp_command_sent', False)}",
+            f"source_map_terminal_review_closure_checkpoint_runtime_evaluated_by_checkpoint={policy.get('runtime_evaluated', False)}",
+            f"source_map_terminal_review_closure_checkpoint_calls_mcp={policy.get('calls_mcp', False)}",
+            f"source_map_terminal_review_closure_checkpoint_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+            f"context_keys={sorted(context.keys())}",
+        ]
+        if result.reason:
+            verification.append(f"source_map_terminal_review_closure_checkpoint_reason={result.reason}")
+        if result.error:
+            verification.append(f"source_map_terminal_review_closure_checkpoint_error={result.error}")
+        artifact = ArtifactRef(path="virtual://workspace/source-map-terminal-review-closure-checkpoint.json", kind=ArtifactKind.JSON, description="Native Web runtime read-only Source Map terminal review observed-result / closure audit checkpoint.", metadata={"status": result.status, "selected_action_id": descriptor.get("selected_action_id", ""), "selected_consumer": descriptor.get("selected_consumer", ""), "completion_status": descriptor.get("completion_status", ""), "closure_status": descriptor.get("closure_status", ""), "terminal_review_candidate": bool(descriptor.get("terminal_review_candidate", False)), "followup_required": bool(descriptor.get("followup_required", False)), "recommended_review_action": descriptor.get("recommended_review_action", ""), "observed_review_action": descriptor.get("observed_review_action", ""), "source_terminal_review_package_digest_sha256": descriptor.get("source_terminal_review_package_digest_sha256", ""), "source_observed_result_digest_sha256": descriptor.get("source_observed_result_digest_sha256", ""), "closure_audit_schema_version": closure_audit.get("schema_version", ""), "ready_for_closure_audit_review": bool(descriptor.get("ready_for_closure_audit_review", False)), "ready_to_execute_now": False, "execute_next_automatically": False, "automatic_followthrough_supported": False, "recommended_action_executed_by_checkpoint": False, "review_only": True, "audit_checkpoint_only": True, "closure_checkpoint_only": True, "browser_started_by_checkpoint": False, "cdp_command_sent_by_checkpoint": False, "runtime_evaluated_by_checkpoint": False, "calls_mcp": False, "mobile_runtime_used": False})
+        if result.status == "ready_for_review":
+            status = ExecutionStatus.SUCCESS
+            next_action = descriptor.get("next_action") or "review_source_map_terminal_review_closure_checkpoint"
+            actions = ["review_source_map_terminal_review_closure_checkpoint"]
+        elif result.status == "blocked":
+            status = ExecutionStatus.PARTIAL
+            next_action = descriptor.get("next_action") or "record_source_map_terminal_review_observed_result"
+            actions = []
+        else:
+            status = ExecutionStatus.FAILED
+            next_action = "inspect_source_map_terminal_review_closure_checkpoint_descriptor"
+            actions = []
+        return ProtectionResult(protection_name=protection_name, applied_actions=actions, verification=verification, status=status, artifacts=[artifact], next_action=str(next_action), confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW)
+    if owner._is_source_map_selected_executor_apply_preflight_request(protection_name, context):
+        spec = SourceMapSelectedExecutorApplyPreflightSpec.from_context(context)
+        result = SourceMapSelectedExecutorApplyPreflightManager().review(spec)
+        descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+        apply_plan = descriptor.get("apply_plan") if isinstance(descriptor.get("apply_plan"), dict) else {}
+        policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+        if not isinstance(policy, dict):
+            policy = {}
+        verification = [
+            f"source_map_selected_executor_apply_preflight_status={result.status}",
+            f"source_map_selected_executor_apply_preflight_selected_action_id={descriptor.get('selected_action_id', '')}",
+            f"source_map_selected_executor_apply_preflight_selected_consumer={descriptor.get('selected_consumer', '')}",
+            f"source_map_selected_executor_apply_preflight_selected_gate={descriptor.get('selected_review_gate', '')}",
+            f"source_map_selected_executor_apply_preflight_approval_record_verified={descriptor.get('approval_record_verified', False)}",
+            f"source_map_selected_executor_apply_preflight_executor_input_ready={descriptor.get('executor_input_ready', False)}",
+            f"source_map_selected_executor_apply_preflight_dispatcher_result_verified={descriptor.get('dispatcher_result_verified', False)}",
+            f"source_map_selected_executor_apply_preflight_dispatcher_decision_recorded={descriptor.get('dispatcher_decision_recorded', False)}",
+            f"source_map_selected_executor_apply_preflight_dispatcher_result_id={descriptor.get('dispatcher_result_id', '')}",
+            f"source_map_selected_executor_apply_preflight_dispatcher_result_optional={descriptor.get('dispatcher_result_optional', True)}",
+            f"source_map_selected_executor_apply_preflight_dispatcher_result_handoff_only={descriptor.get('dispatcher_result_handoff_only', True)}",
+            f"source_map_selected_executor_apply_preflight_dispatcher_result_selected_executor_invoked={descriptor.get('dispatcher_result_selected_executor_invoked', False)}",
+            f"source_map_selected_executor_apply_preflight_dispatcher_result_selected_executor_apply_preflight_invoked={descriptor.get('dispatcher_result_selected_executor_apply_preflight_invoked', False)}",
+            f"source_map_selected_executor_apply_preflight_dispatcher_result_dispatch_target_invoked={descriptor.get('dispatcher_result_dispatch_target_invoked', False)}",
+            f"source_map_selected_executor_apply_preflight_ready_for_selected_executor_review={descriptor.get('ready_for_selected_executor_review', False)}",
+            f"source_map_selected_executor_apply_preflight_ready_to_apply_now={descriptor.get('ready_to_apply_now', False)}",
+            "source_map_selected_executor_apply_preflight_review_only=True",
+            "source_map_selected_executor_apply_preflight_preflight_only=True",
+            "source_map_selected_executor_apply_preflight_apply_preflight_only=True",
+            "source_map_selected_executor_apply_preflight_handoff_only=True",
+            f"source_map_selected_executor_apply_preflight_future_executor_implemented={bool((descriptor.get('future_executor_contract') if isinstance(descriptor.get('future_executor_contract'), dict) else {}).get('implemented', False))}",
+            f"source_map_selected_executor_apply_preflight_raw_exported={policy.get('raw_source_content_exported', False)}",
+            f"source_map_selected_executor_apply_preflight_preview_exported={policy.get('preview_exported', False)}",
+            f"source_map_selected_executor_apply_preflight_fetch_source_map={policy.get('fetch_source_map', False)}",
+            f"source_map_selected_executor_apply_preflight_browser_started={policy.get('browser_started', False)}",
+            f"source_map_selected_executor_apply_preflight_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+            f"source_map_selected_executor_apply_preflight_debugger_execution_performed={policy.get('debugger_execution_performed', False)}",
+            f"source_map_selected_executor_apply_preflight_runtime_evaluated={policy.get('runtime_evaluated', False)}",
+            f"source_map_selected_executor_apply_preflight_logpoint_installed={policy.get('logpoint_installed', False)}",
+            f"source_map_selected_executor_apply_preflight_hook_installed={policy.get('hook_installed', False)}",
+            f"source_map_selected_executor_apply_preflight_rebuild_executed={policy.get('rebuild_executed', False)}",
+            f"source_map_selected_executor_apply_preflight_surface_executor_invoked={policy.get('surface_executor_invoked', False)}",
+            f"source_map_selected_executor_apply_preflight_calls_mcp={policy.get('calls_mcp', False)}",
+            f"source_map_selected_executor_apply_preflight_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+            f"context_keys={sorted(context.keys())}",
+        ]
+        if result.reason:
+            verification.append(f"source_map_selected_executor_apply_preflight_reason={result.reason}")
+        if result.error:
+            verification.append(f"source_map_selected_executor_apply_preflight_error={result.error}")
+        artifact = ArtifactRef(path="virtual://workspace/source-map-selected-executor-apply-preflight.json", kind=ArtifactKind.JSON, description="Native Web runtime review-only Source Map selected executor apply preflight descriptor.", metadata={"status": result.status, "selected_action_id": descriptor.get("selected_action_id", ""), "selected_consumer": descriptor.get("selected_consumer", ""), "selected_followthrough_review_surface": descriptor.get("selected_followthrough_review_surface", ""), "selected_review_gate": descriptor.get("selected_review_gate", ""), "approval_record_verified": bool(descriptor.get("approval_record_verified", False)), "executor_input_ready": bool(descriptor.get("executor_input_ready", False)), "dispatcher_result_verified": bool(descriptor.get("dispatcher_result_verified", False)), "dispatcher_decision_recorded": bool(descriptor.get("dispatcher_decision_recorded", False)), "dispatcher_result_id": descriptor.get("dispatcher_result_id", ""), "dispatcher_result_optional": bool(descriptor.get("dispatcher_result_optional", True)), "dispatcher_result_handoff_only": bool(descriptor.get("dispatcher_result_handoff_only", True)), "dispatcher_result_selected_executor_invoked": False, "dispatcher_result_selected_executor_apply_preflight_invoked": False, "dispatcher_result_dispatch_target_invoked": False, "ready_for_selected_executor_review": bool(descriptor.get("ready_for_selected_executor_review", False)), "ready_to_apply_now": False, "future_action": descriptor.get("future_action", apply_plan.get("future_action", "")), "future_result_artifact": descriptor.get("future_result_artifact", apply_plan.get("future_result_artifact", "")), "review_only": True, "preflight_only": True, "apply_preflight_only": True, "handoff_only": True, "future_executor_implemented": False, "raw_source_content_exported": False, "preview_exported": False, "fetch_source_map": False, "browser_started": False, "cdp_command_sent": False, "runtime_evaluated": False, "logpoint_installed": False, "hook_installed": False, "rebuild_executed": False, "surface_executor_invoked": False})
+        if result.status == "ready_for_review":
+            status = ExecutionStatus.SUCCESS
+            next_action = descriptor.get("next_action") or "review_source_map_selected_executor_application"
+            actions = ["review_source_map_selected_executor_apply_preflight"]
+        elif result.status == "blocked":
+            status = ExecutionStatus.PARTIAL
+            next_action = descriptor.get("next_action") or "provide_source_map_selected_executor_approval_plan_and_record"
+            actions = []
+        else:
+            status = ExecutionStatus.FAILED
+            next_action = "inspect_source_map_selected_executor_apply_preflight_descriptor"
+            actions = []
+        return ProtectionResult(protection_name=protection_name, applied_actions=actions, verification=verification, status=status, artifacts=[artifact], next_action=str(next_action), confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW)
+    if owner._is_source_map_selected_executor_approval_plan_request(protection_name, context):
+        spec = SourceMapSelectedExecutorApprovalPlanSpec.from_context(context)
+        result = SourceMapSelectedExecutorApprovalPlanManager().review(spec)
+        descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+        package = descriptor.get("executor_review_package") if isinstance(descriptor.get("executor_review_package"), dict) else {}
+        approval = descriptor.get("approval_requirements") if isinstance(descriptor.get("approval_requirements"), dict) else {}
+        apply_plan = descriptor.get("apply_plan") if isinstance(descriptor.get("apply_plan"), dict) else {}
+        policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+        if not isinstance(policy, dict):
+            policy = {}
+        verification = [
+            f"source_map_selected_executor_approval_plan_status={result.status}",
+            f"source_map_selected_executor_approval_plan_selected_action_id={descriptor.get('selected_action_id', '')}",
+            f"source_map_selected_executor_approval_plan_selected_consumer={descriptor.get('selected_consumer', '')}",
+            f"source_map_selected_executor_approval_plan_selected_gate={descriptor.get('selected_review_gate', '')}",
+            f"source_map_selected_executor_approval_plan_approval_ready={descriptor.get('approval_plan_ready', False)}",
+            f"source_map_selected_executor_approval_plan_apply_ready_for_review={descriptor.get('apply_plan_ready_for_review', False)}",
+            f"source_map_selected_executor_approval_plan_ready_to_apply_now={descriptor.get('ready_to_apply_now', False)}",
+            f"source_map_selected_executor_approval_plan_approval_recorded={descriptor.get('approval_recorded', False)}",
+            "source_map_selected_executor_approval_plan_review_only=True",
+            "source_map_selected_executor_approval_plan_plan_only=True",
+            "source_map_selected_executor_approval_plan_approval_plan_only=True",
+            "source_map_selected_executor_approval_plan_apply_plan_only=True",
+            "source_map_selected_executor_approval_plan_handoff_only=True",
+            f"source_map_selected_executor_approval_plan_raw_exported={policy.get('raw_source_content_exported', False)}",
+            f"source_map_selected_executor_approval_plan_preview_exported={policy.get('preview_exported', False)}",
+            f"source_map_selected_executor_approval_plan_fetch_source_map={policy.get('fetch_source_map', False)}",
+            f"source_map_selected_executor_approval_plan_browser_started={policy.get('browser_started', False)}",
+            f"source_map_selected_executor_approval_plan_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+            f"source_map_selected_executor_approval_plan_debugger_execution_performed={policy.get('debugger_execution_performed', False)}",
+            f"source_map_selected_executor_approval_plan_runtime_evaluated={policy.get('runtime_evaluated', False)}",
+            f"source_map_selected_executor_approval_plan_logpoint_installed={policy.get('logpoint_installed', False)}",
+            f"source_map_selected_executor_approval_plan_hook_installed={policy.get('hook_installed', False)}",
+            f"source_map_selected_executor_approval_plan_rebuild_executed={policy.get('rebuild_executed', False)}",
+            f"source_map_selected_executor_approval_plan_surface_executor_invoked={policy.get('surface_executor_invoked', False)}",
+            f"source_map_selected_executor_approval_plan_calls_mcp={policy.get('calls_mcp', False)}",
+            f"source_map_selected_executor_approval_plan_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+            f"context_keys={sorted(context.keys())}",
+        ]
+        if result.reason:
+            verification.append(f"source_map_selected_executor_approval_plan_reason={result.reason}")
+        if result.error:
+            verification.append(f"source_map_selected_executor_approval_plan_error={result.error}")
+        artifact = ArtifactRef(path="virtual://workspace/source-map-selected-executor-approval-plan.json", kind=ArtifactKind.JSON, description="Native Web runtime review-only Source Map selected executor approval/apply-plan descriptor.", metadata={"status": result.status, "selected_action_id": descriptor.get("selected_action_id", ""), "selected_consumer": descriptor.get("selected_consumer", ""), "selected_followthrough_review_surface": descriptor.get("selected_followthrough_review_surface", ""), "selected_review_gate": descriptor.get("selected_review_gate", ""), "approval_plan_ready": bool(descriptor.get("approval_plan_ready", False)), "apply_plan_ready_for_review": bool(descriptor.get("apply_plan_ready_for_review", False)), "approval_recorded": False, "ready_to_apply_now": False, "future_action": apply_plan.get("future_action", ""), "approval_record_artifact": approval.get("approval_record_artifact", ""), "review_only": True, "plan_only": True, "approval_plan_only": True, "apply_plan_only": True, "handoff_only": True, "raw_source_content_exported": False, "preview_exported": False, "fetch_source_map": False, "browser_started": False, "cdp_command_sent": False, "runtime_evaluated": False, "logpoint_installed": False, "hook_installed": False, "rebuild_executed": False, "surface_executor_invoked": False, "executor_review_package_consumer": package.get("consumer", "")})
+        if result.status == "ready_for_review":
+            status = ExecutionStatus.SUCCESS
+            next_action = descriptor.get("next_action") or "record_review_approval_for_source_map_selected_executor"
+            actions = ["review_source_map_selected_executor_approval_plan"]
+        elif result.status == "blocked":
+            status = ExecutionStatus.PARTIAL
+            next_action = descriptor.get("next_action") or "provide_ready_source_map_selected_executor_input_review_descriptor"
+            actions = []
+        else:
+            status = ExecutionStatus.FAILED
+            next_action = "inspect_source_map_selected_executor_approval_plan_descriptor"
+            actions = []
+        return ProtectionResult(protection_name=protection_name, applied_actions=actions, verification=verification, status=status, artifacts=[artifact], next_action=str(next_action), confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW)
+    if owner._is_source_map_selected_executor_input_review_request(protection_name, context):
+        spec = SourceMapSelectedExecutorInputReviewSpec.from_context(context)
+        result = SourceMapSelectedExecutorInputReviewManager().review(spec)
+        descriptor = result.descriptor if isinstance(result.descriptor, dict) else {}
+        package = descriptor.get("executor_review_package") if isinstance(descriptor.get("executor_review_package"), dict) else {}
+        gate = package.get("review_gate") if isinstance(package.get("review_gate"), dict) else {}
+        policy = result.side_effect_policy if isinstance(result.side_effect_policy, dict) else descriptor.get("side_effect_policy", {})
+        if not isinstance(policy, dict):
+            policy = {}
+        verification = [
+            f"source_map_selected_executor_input_review_status={result.status}",
+            f"source_map_selected_executor_input_review_selected_action_id={descriptor.get('selected_action_id', '')}",
+            f"source_map_selected_executor_input_review_selected_consumer={descriptor.get('selected_consumer', '')}",
+            f"source_map_selected_executor_input_review_selected_surface={descriptor.get('selected_followthrough_review_surface', '')}",
+            f"source_map_selected_executor_input_review_source_debugger_candidate_selection_id={descriptor.get('source_debugger_candidate_selection_id', '')}",
+            f"source_map_selected_executor_input_review_source_debugger_candidate_selection_ready={descriptor.get('source_debugger_candidate_selection_ready', False)}",
+            f"source_map_selected_executor_input_review_source_hook_candidate_selection_id={descriptor.get('source_hook_candidate_selection_id', '')}",
+            f"source_map_selected_executor_input_review_source_hook_candidate_selection_ready={descriptor.get('source_hook_candidate_selection_ready', False)}",
+            f"source_map_selected_executor_input_review_package_ready={descriptor.get('executor_review_package_ready', False)}",
+            f"source_map_selected_executor_input_review_ready_for_executor_review={descriptor.get('ready_for_executor_review', False)}",
+            f"source_map_selected_executor_input_review_gate={gate.get('gate', '')}",
+            "source_map_selected_executor_input_review_review_only=True",
+            "source_map_selected_executor_input_review_plan_only=True",
+            "source_map_selected_executor_input_review_preflight_only=True",
+            "source_map_selected_executor_input_review_handoff_only=True",
+            f"source_map_selected_executor_input_review_raw_exported={policy.get('raw_source_content_exported', False)}",
+            f"source_map_selected_executor_input_review_preview_exported={policy.get('preview_exported', False)}",
+            f"source_map_selected_executor_input_review_fetch_source_map={policy.get('fetch_source_map', False)}",
+            f"source_map_selected_executor_input_review_browser_started={policy.get('browser_started', False)}",
+            f"source_map_selected_executor_input_review_cdp_command_sent={policy.get('cdp_command_sent', False)}",
+            f"source_map_selected_executor_input_review_debugger_execution_performed={policy.get('debugger_execution_performed', False)}",
+            f"source_map_selected_executor_input_review_runtime_evaluated={policy.get('runtime_evaluated', False)}",
+            f"source_map_selected_executor_input_review_logpoint_installed={policy.get('logpoint_installed', False)}",
+            f"source_map_selected_executor_input_review_hook_installed={policy.get('hook_installed', False)}",
+            f"source_map_selected_executor_input_review_rebuild_executed={policy.get('rebuild_executed', False)}",
+            f"source_map_selected_executor_input_review_calls_mcp={policy.get('calls_mcp', False)}",
+            f"source_map_selected_executor_input_review_mobile_runtime_used={policy.get('mobile_runtime_used', False)}",
+            f"context_keys={sorted(context.keys())}",
+        ]
+        if result.reason:
+            verification.append(f"source_map_selected_executor_input_review_reason={result.reason}")
+        if result.error:
+            verification.append(f"source_map_selected_executor_input_review_error={result.error}")
+        artifact = ArtifactRef(path="virtual://workspace/source-map-selected-executor-input-review.json", kind=ArtifactKind.JSON, description="Native Web runtime review-only Source Map selected executor-input review descriptor.", metadata={"status": result.status, "selected_action_id": descriptor.get("selected_action_id", ""), "selected_consumer": descriptor.get("selected_consumer", ""), "selected_followthrough_review_surface": descriptor.get("selected_followthrough_review_surface", ""), "source_debugger_candidate_selection_id": descriptor.get("source_debugger_candidate_selection_id", ""), "source_debugger_candidate_selection_ready": bool(descriptor.get("source_debugger_candidate_selection_ready", False)), "source_hook_candidate_selection_id": descriptor.get("source_hook_candidate_selection_id", ""), "source_hook_candidate_selection_ready": bool(descriptor.get("source_hook_candidate_selection_ready", False)), "executor_review_package_ready": bool(descriptor.get("executor_review_package_ready", False)), "ready_for_executor_review": bool(descriptor.get("ready_for_executor_review", False)), "review_gate": gate.get("gate", ""), "review_only": True, "plan_only": True, "preflight_only": True, "handoff_only": True, "raw_source_content_exported": False, "preview_exported": False, "fetch_source_map": False, "browser_started": False, "cdp_command_sent": False, "runtime_evaluated": False, "logpoint_installed": False, "hook_installed": False, "rebuild_executed": False})
+        if result.status == "ready_for_review":
+            status = ExecutionStatus.SUCCESS
+            next_action = descriptor.get("next_action") or "review_selected_source_map_executor_input_before_execution"
+            actions = ["review_source_map_selected_executor_input"]
+        elif result.status == "blocked":
+            status = ExecutionStatus.PARTIAL
+            next_action = descriptor.get("next_action") or "provide_ready_source_map_followthrough_surface_selection_descriptor"
+            actions = []
+        else:
+            status = ExecutionStatus.FAILED
+            next_action = "inspect_source_map_selected_executor_input_review_descriptor"
             actions = []
         return ProtectionResult(protection_name=protection_name, applied_actions=actions, verification=verification, status=status, artifacts=[artifact], next_action=str(next_action), confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW)
     return None
