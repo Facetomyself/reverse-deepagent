@@ -4,7 +4,7 @@ Date: 2026-06-22
 
 Base branch: `refactor/consolidate-hooks-native-web`
 
-Status: dispatching
+Status: completed (2026-06-22, 1765 tests OK)
 
 ## Objective
 
@@ -104,10 +104,47 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src .venv/bin/python -m compileall -q src/r
 PATH=".venv/bin:$PATH" PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -v
 ```
 
+## Final results
+
+| File | Before | After | Delta | Worker |
+|---|---|---|---|---|
+| `native_web.py` | 14,317 | 13,436 | **-881** | A (S2) |
+| `native_web_source_dispatch.py` | 219 | 710 | +491 | A (S2) |
+| `coordinator.py` | 2,212 | 1,974 | **-238** | B (B-1) |
+| `runtime/mock_bridge.py` | — | 236 | +236 | B (B-1) |
+| `runtime/browser_lifecycle.py` | — | 44 | +44 | B (B-1) |
+| `artifact_tools.py` | 13,842 | 13,749 | **-93** | C (B-2) |
+| `page_mutation.py` | 9,509 | 9,523 | +14 | D (B-3) |
+
+### Per-worker status
+
+| Worker | Branch | PR | Result |
+|---|---|---|---|
+| A | `rollout12-source-dispatch-s2` | Direct commit `93e0b6a9` | ✅ 10 branches extracted, 316 targeted tests pass |
+| B | `rollout12-coordinator-b1-phase1` | Direct merge `05090444` | ✅ MockJSReverserBridge + Chrome lifecycle extracted, 12 tests pass |
+| C | `rollout12-journal-loader-b2` | Direct merge `77028a8e` | ✅ 11/32 loader functions migrated to common helper, 189 tests pass |
+| D | `rollout12-bare-except-b3` | Fast-forward merge `1a8fc942` | ✅ 11 bare excepts with debug logging, 73 tests pass |
+
+### Final validation (2026-06-22)
+
+```text
+$ git diff --check  # clean
+$ compileall -q src/reverse_deepagent tests  # all modules OK
+$ python -m unittest discover -s tests -v
+Ran 1765 tests in 69.075s
+OK (skipped=2)
+```
+
+### Known issue
+
+Concurrent agents shared the same working directory without worktree isolation,
+causing commits to land on wrong branches. Untangled via cherry-pick. Future
+rollouts should use `isolation: "worktree"` for parallel agents.
+
 ## Follow-up after rollout 12
 
-- Source Dispatch S3-S7 (explicit application branches)
-- Coordinator B-1 Phase 2 (factories + registry + manifest extraction)
-- Journal loader remaining 22 function migration
+- Source Dispatch S3-S7 (explicit application branches, ~24 remaining in `_dispatch_source`)
+- Coordinator B-1 Phase 2 (factories + registry + manifest extraction, ~720 lines remain)
+- Journal loader remaining 21 function migration (same pattern, mechanical)
 - README convergence (B-6)
-- Internal registry re-location (B-5)
+- Internal registry re-location (B-5 — not found in current codebase)
