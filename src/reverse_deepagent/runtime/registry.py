@@ -17,13 +17,6 @@ from reverse_deepagent.runtime.factories import (
     _playwright_cli_runtime_factory,
     _remote_cdp_provider_runtime_factory,
 )
-from reverse_deepagent.runtime.legacy_mcp import (
-    LEGACY_MCP_BACKEND_ID,
-    LegacyMcpPluginUnavailableError,
-    is_legacy_mcp_runtime_kind,
-    legacy_mcp_install_guidance,
-    legacy_mcp_backend_registration,
-)
 
 RuntimeBackendFactory = Callable[..., ReverseRuntime]
 RUNTIME_BACKEND_ENTRY_POINT_GROUP = "reverse_deepagent.runtime_backends"
@@ -388,14 +381,16 @@ def build_default_runtime_registry(*, include_entry_points: bool = True, include
     )
     if include_entry_points:
         registry.load_entry_points()
-    if include_legacy_mcp and not registry.is_registered(LEGACY_MCP_BACKEND_ID):
-        try:
-            registry.register(legacy_mcp_backend_registration())
-        except LegacyMcpPluginUnavailableError:
-            # Core no longer ships a built-in legacy MCP fallback. The optional
-            # plugin is loaded through entry points when installed; otherwise
-            # runtime construction will surface structured install guidance.
-            pass
+    if include_legacy_mcp:
+        from reverse_deepagent.runtime import legacy_mcp as _lm
+        if not registry.is_registered(_lm.LEGACY_MCP_BACKEND_ID):
+            try:
+                registry.register(_lm.legacy_mcp_backend_registration())
+            except _lm.LegacyMcpPluginUnavailableError:
+                # Core no longer ships a built-in legacy MCP fallback. The optional
+                # plugin is loaded through entry points when installed; otherwise
+                # runtime construction will surface structured install guidance.
+                pass
     return registry
 
 
@@ -424,9 +419,10 @@ def build_runtime(
             **runtime_kwargs,
         )
     except ValueError as exc:
-        if is_legacy_mcp_runtime_kind(runtime_kind) and not DEFAULT_RUNTIME_BACKEND_REGISTRY.is_registered(runtime_kind):
-            guidance = legacy_mcp_install_guidance()
-            raise LegacyMcpPluginUnavailableError(
+        from reverse_deepagent.runtime import legacy_mcp as _lm
+        if _lm.is_legacy_mcp_runtime_kind(runtime_kind) and not DEFAULT_RUNTIME_BACKEND_REGISTRY.is_registered(runtime_kind):
+            guidance = _lm.legacy_mcp_install_guidance()
+            raise _lm.LegacyMcpPluginUnavailableError(
                 "Legacy MCP optional backend is not installed. "
                 f"runtime={runtime_kind!r}; package={guidance['package']!r}; "
                 f"install_hint={guidance['install_hint']!r}; "

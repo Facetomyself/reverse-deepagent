@@ -20,7 +20,10 @@ from reverse_deepagent.runtime.legacy_mcp import (
     is_legacy_mcp_runtime_kind,
     legacy_mcp_alias_warning as _legacy_mcp_alias_warning,
 )
-from reverse_deepagent.runtime.manifest import _build_backend_artifact_manifest
+from reverse_deepagent.runtime.manifest import (
+    _artifact_category_from_key,
+    _build_backend_artifact_manifest,
+)
 from reverse_deepagent.runtime.registry import (
     DEFAULT_RUNTIME_BACKEND_REGISTRY,
     build_default_runtime_registry,
