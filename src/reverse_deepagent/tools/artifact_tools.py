@@ -5099,30 +5099,14 @@ def _load_or_read_workspace_foldered_canonical_legacy_fallback_tightening_plan(
     legacy_fallback_tightening_plan_json: str | None,
     legacy_fallback_tightening_plan_artifact_ref: str | None,
 ) -> tuple[dict[str, Any], str, dict[str, Any]]:
-    payload, error = _parse_json_object(
-        legacy_fallback_tightening_plan_json,
-        field_name="legacy_fallback_tightening_plan_json",
-    )
-    if payload is not None or error:
-        if payload is not None:
-            return payload, "", {"source": "inline-json", "artifact_ref": ""}
-        return {"schema_version": "invalid-json", "status": "blocked"}, error, {"source": "inline-json", "artifact_ref": ""}
-    artifact_ref = legacy_fallback_tightening_plan_artifact_ref or "workspace_foldered_canonical_legacy_fallback_tightening_plan"
-    read_result = read_workspace_artifact_payload(
-        artifact_ref=artifact_ref,
+    return _load_workspace_artifact(
+        artifact_key="workspace_foldered_canonical_legacy_fallback_tightening_plan",
         default_artifact_root=default_artifact_root,
-        max_chars=200000,
+        inline_json=legacy_fallback_tightening_plan_json,
+        inline_field_name="legacy_fallback_tightening_plan_json",
+        artifact_ref=legacy_fallback_tightening_plan_artifact_ref,
+        not_found_error="legacy_fallback_tightening_plan_not_observed",
     )
-    input_summary = {
-        "source": "artifact-ref",
-        "artifact_ref": artifact_ref,
-        "read_status": read_result.get("status") or "",
-        "resolution_status": read_result.get("resolution_status") or "",
-        "path": read_result.get("path") or "",
-    }
-    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
-        return read_result["json"], "", input_summary
-    return {"schema_version": "missing", "status": "missing"}, "legacy_fallback_tightening_plan_not_observed", input_summary
 
 
 def _legacy_fallback_tightening_plan_digest_from_payload(plan: dict[str, Any]) -> str:
@@ -5545,30 +5529,14 @@ def _load_or_read_workspace_foldered_canonical_legacy_fallback_tightening_prefli
     legacy_fallback_tightening_preflight_json: str | None,
     legacy_fallback_tightening_preflight_artifact_ref: str | None,
 ) -> tuple[dict[str, Any], str, dict[str, Any]]:
-    payload, error = _parse_json_object(
-        legacy_fallback_tightening_preflight_json,
-        field_name="legacy_fallback_tightening_preflight_json",
-    )
-    if payload is not None or error:
-        if payload is not None:
-            return payload, "", {"source": "inline-json", "artifact_ref": ""}
-        return {"schema_version": "invalid-json", "status": "blocked"}, error, {"source": "inline-json", "artifact_ref": ""}
-    artifact_ref = legacy_fallback_tightening_preflight_artifact_ref or "workspace_foldered_canonical_legacy_fallback_tightening_preflight"
-    read_result = read_workspace_artifact_payload(
-        artifact_ref=artifact_ref,
+    return _load_workspace_artifact(
+        artifact_key="workspace_foldered_canonical_legacy_fallback_tightening_preflight",
         default_artifact_root=default_artifact_root,
-        max_chars=200000,
+        inline_json=legacy_fallback_tightening_preflight_json,
+        inline_field_name="legacy_fallback_tightening_preflight_json",
+        artifact_ref=legacy_fallback_tightening_preflight_artifact_ref,
+        not_found_error="legacy_fallback_tightening_preflight_not_observed",
     )
-    input_summary = {
-        "source": "artifact-ref",
-        "artifact_ref": artifact_ref,
-        "read_status": read_result.get("status") or "",
-        "resolution_status": read_result.get("resolution_status") or "",
-        "path": read_result.get("path") or "",
-    }
-    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
-        return read_result["json"], "", input_summary
-    return {"schema_version": "missing", "status": "missing"}, "legacy_fallback_tightening_preflight_not_observed", input_summary
 
 
 def _legacy_fallback_tightening_preflight_plan_digest(preflight: dict[str, Any]) -> str:
@@ -6121,27 +6089,14 @@ def _load_or_read_workspace_foldered_canonical_migration_finalization_readiness(
     finalization_readiness_json: str | None,
     finalization_readiness_artifact_ref: str | None,
 ) -> tuple[dict[str, Any], str, dict[str, Any]]:
-    payload, error = _parse_json_object(finalization_readiness_json, field_name="finalization_readiness_json")
-    if payload is not None or error:
-        if payload is not None:
-            return payload, "", {"source": "inline-json", "artifact_ref": ""}
-        return {"schema_version": "invalid-json", "status": "blocked"}, error, {"source": "inline-json", "artifact_ref": ""}
-    artifact_ref = finalization_readiness_artifact_ref or "workspace_foldered_canonical_migration_finalization_readiness"
-    read_result = read_workspace_artifact_payload(
-        artifact_ref=artifact_ref,
+    return _load_workspace_artifact(
+        artifact_key="workspace_foldered_canonical_migration_finalization_readiness",
         default_artifact_root=default_artifact_root,
-        max_chars=200000,
+        inline_json=finalization_readiness_json,
+        inline_field_name="finalization_readiness_json",
+        artifact_ref=finalization_readiness_artifact_ref,
+        not_found_error="finalization_readiness_not_observed",
     )
-    input_summary = {
-        "source": "artifact-ref",
-        "artifact_ref": artifact_ref,
-        "read_status": read_result.get("status") or "",
-        "resolution_status": read_result.get("resolution_status") or "",
-        "path": read_result.get("path") or "",
-    }
-    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
-        return read_result["json"], "", input_summary
-    return {"schema_version": "missing", "status": "missing"}, "finalization_readiness_not_observed", input_summary
 
 
 def _foldered_canonical_finalization_plan_candidates(
@@ -6429,27 +6384,14 @@ def _load_or_read_workspace_foldered_canonical_migration_finalization_plan(
     finalization_plan_json: str | None,
     finalization_plan_artifact_ref: str | None,
 ) -> tuple[dict[str, Any], str, dict[str, Any]]:
-    payload, error = _parse_json_object(finalization_plan_json, field_name="finalization_plan_json")
-    if payload is not None or error:
-        if payload is not None:
-            return payload, "", {"source": "inline-json", "artifact_ref": ""}
-        return {"schema_version": "invalid-json", "status": "blocked"}, error, {"source": "inline-json", "artifact_ref": ""}
-    artifact_ref = finalization_plan_artifact_ref or "workspace_foldered_canonical_migration_finalization_plan"
-    read_result = read_workspace_artifact_payload(
-        artifact_ref=artifact_ref,
+    return _load_workspace_artifact(
+        artifact_key="workspace_foldered_canonical_migration_finalization_plan",
         default_artifact_root=default_artifact_root,
-        max_chars=200000,
+        inline_json=finalization_plan_json,
+        inline_field_name="finalization_plan_json",
+        artifact_ref=finalization_plan_artifact_ref,
+        not_found_error="finalization_plan_not_observed",
     )
-    input_summary = {
-        "source": "artifact-ref",
-        "artifact_ref": artifact_ref,
-        "read_status": read_result.get("status") or "",
-        "resolution_status": read_result.get("resolution_status") or "",
-        "path": read_result.get("path") or "",
-    }
-    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
-        return read_result["json"], "", input_summary
-    return {"schema_version": "missing", "status": "missing"}, "finalization_plan_not_observed", input_summary
 
 
 def _foldered_canonical_finalization_plan_digest_from_payload(plan: dict[str, Any]) -> str:
@@ -6880,27 +6822,14 @@ def _load_or_read_workspace_foldered_canonical_migration_finalization_preflight(
     finalization_preflight_json: str | None,
     finalization_preflight_artifact_ref: str | None,
 ) -> tuple[dict[str, Any], str, dict[str, Any]]:
-    payload, error = _parse_json_object(finalization_preflight_json, field_name="finalization_preflight_json")
-    if payload is not None or error:
-        if payload is not None:
-            return payload, "", {"source": "inline-json", "artifact_ref": ""}
-        return {"schema_version": "invalid-json", "status": "blocked"}, error, {"source": "inline-json", "artifact_ref": ""}
-    artifact_ref = finalization_preflight_artifact_ref or "workspace_foldered_canonical_migration_finalization_preflight"
-    read_result = read_workspace_artifact_payload(
-        artifact_ref=artifact_ref,
+    return _load_workspace_artifact(
+        artifact_key="workspace_foldered_canonical_migration_finalization_preflight",
         default_artifact_root=default_artifact_root,
-        max_chars=200000,
+        inline_json=finalization_preflight_json,
+        inline_field_name="finalization_preflight_json",
+        artifact_ref=finalization_preflight_artifact_ref,
+        not_found_error="finalization_preflight_not_observed",
     )
-    input_summary = {
-        "source": "artifact-ref",
-        "artifact_ref": artifact_ref,
-        "read_status": read_result.get("status") or "",
-        "resolution_status": read_result.get("resolution_status") or "",
-        "path": read_result.get("path") or "",
-    }
-    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
-        return read_result["json"], "", input_summary
-    return {"schema_version": "missing", "status": "missing"}, "finalization_preflight_not_observed", input_summary
 
 
 def _foldered_canonical_finalization_preflight_plan_digest(preflight: dict[str, Any]) -> str:
@@ -7311,27 +7240,14 @@ def _load_or_read_workspace_foldered_canonical_migration_finalization_result(
     finalization_result_json: str | None,
     finalization_result_artifact_ref: str | None,
 ) -> tuple[dict[str, Any], str, dict[str, Any]]:
-    payload, error = _parse_json_object(finalization_result_json, field_name="finalization_result_json")
-    if payload is not None or error:
-        if payload is not None:
-            return payload, "", {"source": "inline-json", "artifact_ref": ""}
-        return {"schema_version": "invalid-json", "status": "blocked"}, error, {"source": "inline-json", "artifact_ref": ""}
-    artifact_ref = finalization_result_artifact_ref or "workspace_foldered_canonical_migration_finalization_result"
-    read_result = read_workspace_artifact_payload(
-        artifact_ref=artifact_ref,
+    return _load_workspace_artifact(
+        artifact_key="workspace_foldered_canonical_migration_finalization_result",
         default_artifact_root=default_artifact_root,
-        max_chars=200000,
+        inline_json=finalization_result_json,
+        inline_field_name="finalization_result_json",
+        artifact_ref=finalization_result_artifact_ref,
+        not_found_error="finalization_result_not_observed",
     )
-    input_summary = {
-        "source": "artifact-ref",
-        "artifact_ref": artifact_ref,
-        "read_status": read_result.get("status") or "",
-        "resolution_status": read_result.get("resolution_status") or "",
-        "path": read_result.get("path") or "",
-    }
-    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
-        return read_result["json"], "", input_summary
-    return {"schema_version": "missing", "status": "missing"}, "finalization_result_not_observed", input_summary
 
 
 def _load_or_read_workspace_foldered_canonical_migration_finalization_journal(
@@ -7340,32 +7256,19 @@ def _load_or_read_workspace_foldered_canonical_migration_finalization_journal(
     finalization_journal_json: str | None,
     finalization_journal_artifact_ref: str | None,
 ) -> tuple[dict[str, Any], str, dict[str, Any]]:
-    payload, error = _parse_json_object(finalization_journal_json, field_name="finalization_journal_json")
-    if payload is not None or error:
-        if payload is not None:
-            if not isinstance(payload.get("entries"), list):
-                payload["entries"] = []
-            return payload, "", {"source": "inline-json", "artifact_ref": ""}
-        return {"schema_version": "invalid-json", "status": "blocked", "entries": []}, error, {"source": "inline-json", "artifact_ref": ""}
-    artifact_ref = finalization_journal_artifact_ref or "workspace_foldered_canonical_migration_finalization_journal"
-    read_result = read_workspace_artifact_payload(
-        artifact_ref=artifact_ref,
+    data, error, input_ctx = _load_workspace_artifact(
+        artifact_key="workspace_foldered_canonical_migration_finalization_journal",
         default_artifact_root=default_artifact_root,
-        max_chars=200000,
+        inline_json=finalization_journal_json,
+        inline_field_name="finalization_journal_json",
+        artifact_ref=finalization_journal_artifact_ref,
+        invalid_json_fallback={"schema_version": "invalid-json", "status": "blocked", "entries": []},
+        not_found_fallback={"schema_version": "missing", "status": "missing", "entries": []},
+        not_found_error="finalization_journal_not_observed",
     )
-    input_summary = {
-        "source": "artifact-ref",
-        "artifact_ref": artifact_ref,
-        "read_status": read_result.get("status") or "",
-        "resolution_status": read_result.get("resolution_status") or "",
-        "path": read_result.get("path") or "",
-    }
-    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
-        payload = read_result["json"]
-        if not isinstance(payload.get("entries"), list):
-            payload["entries"] = []
-        return payload, "", input_summary
-    return {"schema_version": "missing", "status": "missing", "entries": []}, "finalization_journal_not_observed", input_summary
+    if not isinstance(data.get("entries"), list):
+        data["entries"] = []
+    return data, error, input_ctx
 
 
 def _find_foldered_canonical_finalization_audit_journal_entry(
@@ -7660,27 +7563,14 @@ def _load_or_read_workspace_foldered_canonical_migration_post_finalization_audit
     post_finalization_audit_json: str | None,
     post_finalization_audit_artifact_ref: str | None,
 ) -> tuple[dict[str, Any], str, dict[str, Any]]:
-    payload, error = _parse_json_object(post_finalization_audit_json, field_name="post_finalization_audit_json")
-    if payload is not None or error:
-        if payload is not None:
-            return payload, "", {"source": "inline-json", "artifact_ref": ""}
-        return {"schema_version": "invalid-json", "status": "blocked"}, error, {"source": "inline-json", "artifact_ref": ""}
-    artifact_ref = post_finalization_audit_artifact_ref or "workspace_foldered_canonical_migration_post_finalization_audit"
-    read_result = read_workspace_artifact_payload(
-        artifact_ref=artifact_ref,
+    return _load_workspace_artifact(
+        artifact_key="workspace_foldered_canonical_migration_post_finalization_audit",
         default_artifact_root=default_artifact_root,
-        max_chars=200000,
+        inline_json=post_finalization_audit_json,
+        inline_field_name="post_finalization_audit_json",
+        artifact_ref=post_finalization_audit_artifact_ref,
+        not_found_error="post_finalization_audit_not_observed",
     )
-    input_summary = {
-        "source": "artifact-ref",
-        "artifact_ref": artifact_ref,
-        "read_status": read_result.get("status") or "",
-        "resolution_status": read_result.get("resolution_status") or "",
-        "path": read_result.get("path") or "",
-    }
-    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
-        return read_result["json"], "", input_summary
-    return {"schema_version": "missing", "status": "missing"}, "post_finalization_audit_not_observed", input_summary
 
 
 def _load_or_read_workspace_consumer_readiness_score(
@@ -7689,27 +7579,15 @@ def _load_or_read_workspace_consumer_readiness_score(
     readiness_score_json: str | None,
     readiness_score_artifact_ref: str | None,
 ) -> tuple[dict[str, Any], str, dict[str, Any]]:
-    payload, error = _parse_json_object(readiness_score_json, field_name="readiness_score_json")
-    if payload is not None or error:
-        if payload is not None:
-            return payload, "", {"source": "inline-json", "artifact_ref": ""}
-        return {"schema_version": "invalid-json", "status": "blocked"}, error, {"source": "inline-json", "artifact_ref": ""}
-    artifact_ref = readiness_score_artifact_ref or "workspace_consumer_readiness_score"
-    read_result = read_workspace_artifact_payload(
-        artifact_ref=artifact_ref,
+    return _load_workspace_artifact(
+        artifact_key="workspace_consumer_readiness_score",
         default_artifact_root=default_artifact_root,
-        max_chars=200000,
+        inline_json=readiness_score_json,
+        inline_field_name="readiness_score_json",
+        artifact_ref=readiness_score_artifact_ref,
+        not_found_fallback={"schema_version": "missing", "status": "missing", "readiness": {}},
+        not_found_error="workspace_consumer_readiness_score_not_observed",
     )
-    input_summary = {
-        "source": "artifact-ref",
-        "artifact_ref": artifact_ref,
-        "read_status": read_result.get("status") or "",
-        "resolution_status": read_result.get("resolution_status") or "",
-        "path": read_result.get("path") or "",
-    }
-    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
-        return read_result["json"], "", input_summary
-    return {"schema_version": "missing", "status": "missing", "readiness": {}}, "workspace_consumer_readiness_score_not_observed", input_summary
 
 
 def _foldered_canonical_finalized_manifest_entry_count(entries: list[Any]) -> int:
@@ -7987,27 +7865,14 @@ def _load_or_read_workspace_foldered_canonical_broader_rollout_readiness(
     broader_rollout_readiness_json: str | None,
     broader_rollout_readiness_artifact_ref: str | None,
 ) -> tuple[dict[str, Any], str, dict[str, Any]]:
-    payload, error = _parse_json_object(broader_rollout_readiness_json, field_name="broader_rollout_readiness_json")
-    if payload is not None or error:
-        if payload is not None:
-            return payload, "", {"source": "inline-json", "artifact_ref": ""}
-        return {"schema_version": "invalid-json", "status": "blocked"}, error, {"source": "inline-json", "artifact_ref": ""}
-    artifact_ref = broader_rollout_readiness_artifact_ref or "workspace_foldered_canonical_broader_rollout_readiness"
-    read_result = read_workspace_artifact_payload(
-        artifact_ref=artifact_ref,
+    return _load_workspace_artifact(
+        artifact_key="workspace_foldered_canonical_broader_rollout_readiness",
         default_artifact_root=default_artifact_root,
-        max_chars=200000,
+        inline_json=broader_rollout_readiness_json,
+        inline_field_name="broader_rollout_readiness_json",
+        artifact_ref=broader_rollout_readiness_artifact_ref,
+        not_found_error="broader_rollout_readiness_not_observed",
     )
-    input_summary = {
-        "source": "artifact-ref",
-        "artifact_ref": artifact_ref,
-        "read_status": read_result.get("status") or "",
-        "resolution_status": read_result.get("resolution_status") or "",
-        "path": read_result.get("path") or "",
-    }
-    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
-        return read_result["json"], "", input_summary
-    return {"schema_version": "missing", "status": "missing"}, "broader_rollout_readiness_not_observed", input_summary
 
 
 def _foldered_canonical_broader_rollout_candidates(
@@ -8338,27 +8203,14 @@ def _load_or_read_workspace_foldered_canonical_broader_rollout_plan(
     broader_rollout_plan_json: str | None,
     broader_rollout_plan_artifact_ref: str | None,
 ) -> tuple[dict[str, Any], str, dict[str, Any]]:
-    payload, error = _parse_json_object(broader_rollout_plan_json, field_name="broader_rollout_plan_json")
-    if payload is not None or error:
-        if payload is not None:
-            return payload, "", {"source": "inline-json", "artifact_ref": ""}
-        return {"schema_version": "invalid-json", "status": "blocked"}, error, {"source": "inline-json", "artifact_ref": ""}
-    artifact_ref = broader_rollout_plan_artifact_ref or "workspace_foldered_canonical_broader_rollout_plan"
-    read_result = read_workspace_artifact_payload(
-        artifact_ref=artifact_ref,
+    return _load_workspace_artifact(
+        artifact_key="workspace_foldered_canonical_broader_rollout_plan",
         default_artifact_root=default_artifact_root,
-        max_chars=200000,
+        inline_json=broader_rollout_plan_json,
+        inline_field_name="broader_rollout_plan_json",
+        artifact_ref=broader_rollout_plan_artifact_ref,
+        not_found_error="broader_rollout_plan_not_observed",
     )
-    input_summary = {
-        "source": "artifact-ref",
-        "artifact_ref": artifact_ref,
-        "read_status": read_result.get("status") or "",
-        "resolution_status": read_result.get("resolution_status") or "",
-        "path": read_result.get("path") or "",
-    }
-    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
-        return read_result["json"], "", input_summary
-    return {"schema_version": "missing", "status": "missing"}, "broader_rollout_plan_not_observed", input_summary
 
 
 def _foldered_canonical_broader_rollout_plan_digest_from_payload(plan: dict[str, Any]) -> str:
@@ -8805,27 +8657,14 @@ def _load_or_read_workspace_foldered_canonical_broader_rollout_preflight(
     broader_rollout_preflight_json: str | None,
     broader_rollout_preflight_artifact_ref: str | None,
 ) -> tuple[dict[str, Any], str, dict[str, Any]]:
-    payload, error = _parse_json_object(broader_rollout_preflight_json, field_name="broader_rollout_preflight_json")
-    if payload is not None or error:
-        if payload is not None:
-            return payload, "", {"source": "inline-json", "artifact_ref": ""}
-        return {"schema_version": "invalid-json", "status": "blocked"}, error, {"source": "inline-json", "artifact_ref": ""}
-    artifact_ref = broader_rollout_preflight_artifact_ref or "workspace_foldered_canonical_broader_rollout_preflight"
-    read_result = read_workspace_artifact_payload(
-        artifact_ref=artifact_ref,
+    return _load_workspace_artifact(
+        artifact_key="workspace_foldered_canonical_broader_rollout_preflight",
         default_artifact_root=default_artifact_root,
-        max_chars=200000,
+        inline_json=broader_rollout_preflight_json,
+        inline_field_name="broader_rollout_preflight_json",
+        artifact_ref=broader_rollout_preflight_artifact_ref,
+        not_found_error="broader_rollout_preflight_not_observed",
     )
-    input_summary = {
-        "source": "artifact-ref",
-        "artifact_ref": artifact_ref,
-        "read_status": read_result.get("status") or "",
-        "resolution_status": read_result.get("resolution_status") or "",
-        "path": read_result.get("path") or "",
-    }
-    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
-        return read_result["json"], "", input_summary
-    return {"schema_version": "missing", "status": "missing"}, "broader_rollout_preflight_not_observed", input_summary
 
 
 def _foldered_canonical_broader_rollout_preflight_plan_digest(preflight: dict[str, Any]) -> str:
@@ -9239,27 +9078,14 @@ def _load_or_read_workspace_foldered_canonical_broader_rollout_result(
     broader_rollout_result_json: str | None,
     broader_rollout_result_artifact_ref: str | None,
 ) -> tuple[dict[str, Any], str, dict[str, Any]]:
-    payload, error = _parse_json_object(broader_rollout_result_json, field_name="broader_rollout_result_json")
-    if payload is not None or error:
-        if payload is not None:
-            return payload, "", {"source": "inline-json", "artifact_ref": ""}
-        return {"schema_version": "invalid-json", "status": "blocked"}, error, {"source": "inline-json", "artifact_ref": ""}
-    artifact_ref = broader_rollout_result_artifact_ref or "workspace_foldered_canonical_broader_rollout_result"
-    read_result = read_workspace_artifact_payload(
-        artifact_ref=artifact_ref,
+    return _load_workspace_artifact(
+        artifact_key="workspace_foldered_canonical_broader_rollout_result",
         default_artifact_root=default_artifact_root,
-        max_chars=200000,
+        inline_json=broader_rollout_result_json,
+        inline_field_name="broader_rollout_result_json",
+        artifact_ref=broader_rollout_result_artifact_ref,
+        not_found_error="broader_rollout_result_not_observed",
     )
-    input_summary = {
-        "source": "artifact-ref",
-        "artifact_ref": artifact_ref,
-        "read_status": read_result.get("status") or "",
-        "resolution_status": read_result.get("resolution_status") or "",
-        "path": read_result.get("path") or "",
-    }
-    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
-        return read_result["json"], "", input_summary
-    return {"schema_version": "missing", "status": "missing"}, "broader_rollout_result_not_observed", input_summary
 
 
 def _load_or_read_workspace_foldered_canonical_broader_rollout_journal(
@@ -9268,32 +9094,19 @@ def _load_or_read_workspace_foldered_canonical_broader_rollout_journal(
     broader_rollout_journal_json: str | None,
     broader_rollout_journal_artifact_ref: str | None,
 ) -> tuple[dict[str, Any], str, dict[str, Any]]:
-    payload, error = _parse_json_object(broader_rollout_journal_json, field_name="broader_rollout_journal_json")
-    if payload is not None or error:
-        if payload is not None:
-            if not isinstance(payload.get("entries"), list):
-                payload["entries"] = []
-            return payload, "", {"source": "inline-json", "artifact_ref": ""}
-        return {"schema_version": "invalid-json", "status": "blocked", "entries": []}, error, {"source": "inline-json", "artifact_ref": ""}
-    artifact_ref = broader_rollout_journal_artifact_ref or "workspace_foldered_canonical_broader_rollout_journal"
-    read_result = read_workspace_artifact_payload(
-        artifact_ref=artifact_ref,
+    data, error, input_ctx = _load_workspace_artifact(
+        artifact_key="workspace_foldered_canonical_broader_rollout_journal",
         default_artifact_root=default_artifact_root,
-        max_chars=200000,
+        inline_json=broader_rollout_journal_json,
+        inline_field_name="broader_rollout_journal_json",
+        artifact_ref=broader_rollout_journal_artifact_ref,
+        invalid_json_fallback={"schema_version": "invalid-json", "status": "blocked", "entries": []},
+        not_found_fallback={"schema_version": "missing", "status": "missing", "entries": []},
+        not_found_error="broader_rollout_journal_not_observed",
     )
-    input_summary = {
-        "source": "artifact-ref",
-        "artifact_ref": artifact_ref,
-        "read_status": read_result.get("status") or "",
-        "resolution_status": read_result.get("resolution_status") or "",
-        "path": read_result.get("path") or "",
-    }
-    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
-        payload = read_result["json"]
-        if not isinstance(payload.get("entries"), list):
-            payload["entries"] = []
-        return payload, "", input_summary
-    return {"schema_version": "missing", "status": "missing", "entries": []}, "broader_rollout_journal_not_observed", input_summary
+    if not isinstance(data.get("entries"), list):
+        data["entries"] = []
+    return data, error, input_ctx
 
 
 def _find_foldered_canonical_broader_rollout_audit_journal_entry(
@@ -9635,27 +9448,14 @@ def _load_or_read_workspace_foldered_canonical_broader_rollout_post_audit(
     broader_rollout_post_audit_json: str | None,
     broader_rollout_post_audit_artifact_ref: str | None,
 ) -> tuple[dict[str, Any], str, dict[str, Any]]:
-    payload, error = _parse_json_object(broader_rollout_post_audit_json, field_name="broader_rollout_post_audit_json")
-    if payload is not None or error:
-        if payload is not None:
-            return payload, "", {"source": "inline-json", "artifact_ref": ""}
-        return {"schema_version": "invalid-json", "status": "blocked"}, error, {"source": "inline-json", "artifact_ref": ""}
-    artifact_ref = broader_rollout_post_audit_artifact_ref or "workspace_foldered_canonical_broader_rollout_post_audit"
-    read_result = read_workspace_artifact_payload(
-        artifact_ref=artifact_ref,
+    return _load_workspace_artifact(
+        artifact_key="workspace_foldered_canonical_broader_rollout_post_audit",
         default_artifact_root=default_artifact_root,
-        max_chars=200000,
+        inline_json=broader_rollout_post_audit_json,
+        inline_field_name="broader_rollout_post_audit_json",
+        artifact_ref=broader_rollout_post_audit_artifact_ref,
+        not_found_error="broader_rollout_post_audit_not_observed",
     )
-    input_summary = {
-        "source": "artifact-ref",
-        "artifact_ref": artifact_ref,
-        "read_status": read_result.get("status") or "",
-        "resolution_status": read_result.get("resolution_status") or "",
-        "path": read_result.get("path") or "",
-    }
-    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
-        return read_result["json"], "", input_summary
-    return {"schema_version": "missing", "status": "missing"}, "broader_rollout_post_audit_not_observed", input_summary
 
 
 def _foldered_canonical_broader_rollout_rollback_decision_current_manifest_checks(
@@ -9912,27 +9712,14 @@ def _load_or_read_workspace_foldered_canonical_broader_rollout_rollback_decision
     rollback_decision_plan_json: str | None,
     rollback_decision_plan_artifact_ref: str | None,
 ) -> tuple[dict[str, Any], str, dict[str, Any]]:
-    payload, error = _parse_json_object(rollback_decision_plan_json, field_name="rollback_decision_plan_json")
-    if payload is not None or error:
-        if payload is not None:
-            return payload, "", {"source": "inline-json", "artifact_ref": ""}
-        return {"schema_version": "invalid-json", "status": "blocked"}, error, {"source": "inline-json", "artifact_ref": ""}
-    artifact_ref = rollback_decision_plan_artifact_ref or "workspace_foldered_canonical_broader_rollout_rollback_decision_plan"
-    read_result = read_workspace_artifact_payload(
-        artifact_ref=artifact_ref,
+    return _load_workspace_artifact(
+        artifact_key="workspace_foldered_canonical_broader_rollout_rollback_decision_plan",
         default_artifact_root=default_artifact_root,
-        max_chars=200000,
+        inline_json=rollback_decision_plan_json,
+        inline_field_name="rollback_decision_plan_json",
+        artifact_ref=rollback_decision_plan_artifact_ref,
+        not_found_error="rollback_decision_plan_not_observed",
     )
-    input_summary = {
-        "source": "artifact-ref",
-        "artifact_ref": artifact_ref,
-        "read_status": read_result.get("status") or "",
-        "resolution_status": read_result.get("resolution_status") or "",
-        "path": read_result.get("path") or "",
-    }
-    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
-        return read_result["json"], "", input_summary
-    return {"schema_version": "missing", "status": "missing"}, "rollback_decision_plan_not_observed", input_summary
 
 
 def _workspace_foldered_canonical_broader_rollout_decision_record_artifact_metadata(
@@ -10206,27 +9993,14 @@ def _load_or_read_workspace_foldered_canonical_broader_rollout_decision_record(
     decision_record_json: str | None,
     decision_record_artifact_ref: str | None,
 ) -> tuple[dict[str, Any], str, dict[str, Any]]:
-    payload, error = _parse_json_object(decision_record_json, field_name="decision_record_json")
-    if payload is not None or error:
-        if payload is not None:
-            return payload, "", {"source": "inline-json", "artifact_ref": ""}
-        return {"schema_version": "invalid-json", "status": "blocked"}, error, {"source": "inline-json", "artifact_ref": ""}
-    artifact_ref = decision_record_artifact_ref or "workspace_foldered_canonical_broader_rollout_decision_record"
-    read_result = read_workspace_artifact_payload(
-        artifact_ref=artifact_ref,
+    return _load_workspace_artifact(
+        artifact_key="workspace_foldered_canonical_broader_rollout_decision_record",
         default_artifact_root=default_artifact_root,
-        max_chars=200000,
+        inline_json=decision_record_json,
+        inline_field_name="decision_record_json",
+        artifact_ref=decision_record_artifact_ref,
+        not_found_error="decision_record_not_observed",
     )
-    input_summary = {
-        "source": "artifact-ref",
-        "artifact_ref": artifact_ref,
-        "read_status": read_result.get("status") or "",
-        "resolution_status": read_result.get("resolution_status") or "",
-        "path": read_result.get("path") or "",
-    }
-    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
-        return read_result["json"], "", input_summary
-    return {"schema_version": "missing", "status": "missing"}, "decision_record_not_observed", input_summary
 
 
 def _foldered_canonical_broader_rollout_commit_manifest_entry_checks(
@@ -10927,27 +10701,14 @@ def _load_or_read_workspace_foldered_canonical_broader_rollout_rollback_prefligh
     rollback_preflight_json: str | None,
     rollback_preflight_artifact_ref: str | None,
 ) -> tuple[dict[str, Any], str, dict[str, Any]]:
-    payload, error = _parse_json_object(rollback_preflight_json, field_name="rollback_preflight_json")
-    if payload is not None or error:
-        if payload is not None:
-            return payload, "", {"source": "inline-json", "artifact_ref": ""}
-        return {"schema_version": "invalid-json", "status": "blocked"}, error, {"source": "inline-json", "artifact_ref": ""}
-    artifact_ref = rollback_preflight_artifact_ref or "workspace_foldered_canonical_broader_rollout_rollback_preflight"
-    read_result = read_workspace_artifact_payload(
-        artifact_ref=artifact_ref,
+    return _load_workspace_artifact(
+        artifact_key="workspace_foldered_canonical_broader_rollout_rollback_preflight",
         default_artifact_root=default_artifact_root,
-        max_chars=200000,
+        inline_json=rollback_preflight_json,
+        inline_field_name="rollback_preflight_json",
+        artifact_ref=rollback_preflight_artifact_ref,
+        not_found_error="rollback_preflight_not_observed",
     )
-    input_summary = {
-        "source": "artifact-ref",
-        "artifact_ref": artifact_ref,
-        "read_status": read_result.get("status") or "",
-        "resolution_status": read_result.get("resolution_status") or "",
-        "path": read_result.get("path") or "",
-    }
-    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
-        return read_result["json"], "", input_summary
-    return {"schema_version": "missing", "status": "missing"}, "rollback_preflight_not_observed", input_summary
 
 
 def _foldered_canonical_broader_rollout_rollback_backend_manifest(
@@ -11270,30 +11031,14 @@ def _load_or_read_workspace_foldered_canonical_legacy_fallback_tightening_result
     legacy_fallback_tightening_result_json: str | None,
     legacy_fallback_tightening_result_artifact_ref: str | None,
 ) -> tuple[dict[str, Any], str, dict[str, Any]]:
-    payload, error = _parse_json_object(
-        legacy_fallback_tightening_result_json,
-        field_name="legacy_fallback_tightening_result_json",
-    )
-    if payload is not None or error:
-        if payload is not None:
-            return payload, "", {"source": "inline-json", "artifact_ref": ""}
-        return {"schema_version": "invalid-json", "status": "blocked"}, error, {"source": "inline-json", "artifact_ref": ""}
-    artifact_ref = legacy_fallback_tightening_result_artifact_ref or "workspace_foldered_canonical_legacy_fallback_tightening_result"
-    read_result = read_workspace_artifact_payload(
-        artifact_ref=artifact_ref,
+    return _load_workspace_artifact(
+        artifact_key="workspace_foldered_canonical_legacy_fallback_tightening_result",
         default_artifact_root=default_artifact_root,
-        max_chars=200000,
+        inline_json=legacy_fallback_tightening_result_json,
+        inline_field_name="legacy_fallback_tightening_result_json",
+        artifact_ref=legacy_fallback_tightening_result_artifact_ref,
+        not_found_error="legacy_fallback_tightening_result_not_observed",
     )
-    input_summary = {
-        "source": "artifact-ref",
-        "artifact_ref": artifact_ref,
-        "read_status": read_result.get("status") or "",
-        "resolution_status": read_result.get("resolution_status") or "",
-        "path": read_result.get("path") or "",
-    }
-    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
-        return read_result["json"], "", input_summary
-    return {"schema_version": "missing", "status": "missing"}, "legacy_fallback_tightening_result_not_observed", input_summary
 
 
 def _foldered_canonical_finalization_readiness_manifest_checks(
@@ -11612,27 +11357,14 @@ def _load_or_read_workspace_foldered_canonical_rollback_checkpoint(
     rollback_checkpoint_json: str | None,
     rollback_checkpoint_artifact_ref: str | None,
 ) -> tuple[dict[str, Any], str, dict[str, Any]]:
-    payload, error = _parse_json_object(rollback_checkpoint_json, field_name="rollback_checkpoint_json")
-    if payload is not None or error:
-        if payload is not None:
-            return payload, "", {"source": "inline-json", "artifact_ref": ""}
-        return {"schema_version": "invalid-json", "status": "blocked"}, error, {"source": "inline-json", "artifact_ref": ""}
-    artifact_ref = rollback_checkpoint_artifact_ref or "workspace_foldered_canonical_migration_rollback_checkpoint"
-    read_result = read_workspace_artifact_payload(
-        artifact_ref=artifact_ref,
+    return _load_workspace_artifact(
+        artifact_key="workspace_foldered_canonical_migration_rollback_checkpoint",
         default_artifact_root=default_artifact_root,
-        max_chars=200000,
+        inline_json=rollback_checkpoint_json,
+        inline_field_name="rollback_checkpoint_json",
+        artifact_ref=rollback_checkpoint_artifact_ref,
+        not_found_error="foldered_canonical_rollback_checkpoint_not_observed",
     )
-    input_summary = {
-        "source": "artifact-ref",
-        "artifact_ref": artifact_ref,
-        "read_status": read_result.get("status") or "",
-        "resolution_status": read_result.get("resolution_status") or "",
-        "path": read_result.get("path") or "",
-    }
-    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
-        return read_result["json"], "", input_summary
-    return {"schema_version": "missing", "status": "missing"}, "foldered_canonical_rollback_checkpoint_not_observed", input_summary
 
 
 def _foldered_canonical_physical_apply_expected_approval(*, apply_plan_digest: str, dry_run: dict[str, Any]) -> dict[str, Any]:
@@ -12041,27 +11773,14 @@ def _load_or_read_workspace_foldered_canonical_physical_apply_preflight(
     physical_apply_preflight_json: str | None,
     physical_apply_preflight_artifact_ref: str | None,
 ) -> tuple[dict[str, Any], str, dict[str, Any]]:
-    payload, error = _parse_json_object(physical_apply_preflight_json, field_name="physical_apply_preflight_json")
-    if payload is not None or error:
-        if payload is not None:
-            return payload, "", {"source": "inline-json", "artifact_ref": ""}
-        return {"schema_version": "invalid-json", "status": "blocked"}, error, {"source": "inline-json", "artifact_ref": ""}
-    artifact_ref = physical_apply_preflight_artifact_ref or "workspace_foldered_canonical_migration_physical_apply_preflight"
-    read_result = read_workspace_artifact_payload(
-        artifact_ref=artifact_ref,
+    return _load_workspace_artifact(
+        artifact_key="workspace_foldered_canonical_migration_physical_apply_preflight",
         default_artifact_root=default_artifact_root,
-        max_chars=200000,
+        inline_json=physical_apply_preflight_json,
+        inline_field_name="physical_apply_preflight_json",
+        artifact_ref=physical_apply_preflight_artifact_ref,
+        not_found_error="physical_apply_preflight_not_observed",
     )
-    input_summary = {
-        "source": "artifact-ref",
-        "artifact_ref": artifact_ref,
-        "read_status": read_result.get("status") or "",
-        "resolution_status": read_result.get("resolution_status") or "",
-        "path": read_result.get("path") or "",
-    }
-    if read_result.get("status") == "found" and isinstance(read_result.get("json"), dict):
-        return read_result["json"], "", input_summary
-    return {"schema_version": "missing", "status": "missing"}, "physical_apply_preflight_not_observed", input_summary
 
 
 def _foldered_canonical_manifest_dry_run_apply_plan_digest(dry_run: dict[str, Any]) -> str:
