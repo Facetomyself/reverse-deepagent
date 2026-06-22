@@ -40,13 +40,7 @@ from reverse_deepagent.schemas import (
 
 
 def dispatch_source_map_review_evidence(owner: Any, protection_name: str, context: dict) -> ProtectionResult | None:
-    """Route the lowest-side-effect Source Map review-evidence requests.
-
-    This helper is intentionally small: predicates stay on ``owner`` so
-    ``_dispatch_source(...)`` order remains mechanically auditable, while
-    manager business rules and payload construction stay equivalent to the
-    original NativeWebRuntime branches.
-    """
+    """Route the lowest-side-effect Source Map review-evidence requests."""
     if owner._is_source_map_lookup_request(protection_name, context):
         spec = SourceMapLookupSpec.from_context(context)
         result = SourceMapLookupManager().lookup(spec)
@@ -78,17 +72,7 @@ def dispatch_source_map_review_evidence(owner: Any, protection_name: str, contex
             path="virtual://workspace/source-map-lookup.json",
             kind=ArtifactKind.JSON,
             description="Native Web runtime review-only Source Map lookup descriptor.",
-            metadata={
-                "status": result.status,
-                "lookup_direction": request.get("lookup_direction", ""),
-                "mapping_found": bool(descriptor.get("mapping_found", False)),
-                "strategy": location.get("strategy", ""),
-                "review_only": True,
-                "fetch_source_map": False,
-                "browser_started": False,
-                "cdp_command_sent": False,
-                "runtime_evaluated": False,
-            },
+            metadata={"status": result.status, "lookup_direction": request.get("lookup_direction", ""), "mapping_found": bool(descriptor.get("mapping_found", False)), "strategy": location.get("strategy", ""), "review_only": True, "fetch_source_map": False, "browser_started": False, "cdp_command_sent": False, "runtime_evaluated": False},
         )
         if result.status == "ready_for_review":
             status = ExecutionStatus.SUCCESS
@@ -102,15 +86,7 @@ def dispatch_source_map_review_evidence(owner: Any, protection_name: str, contex
             status = ExecutionStatus.FAILED
             next_action = "inspect_source_map_lookup_descriptor"
             actions = []
-        return ProtectionResult(
-            protection_name=protection_name,
-            applied_actions=actions,
-            verification=verification,
-            status=status,
-            artifacts=[artifact],
-            next_action=str(next_action),
-            confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
-        )
+        return ProtectionResult(protection_name=protection_name, applied_actions=actions, verification=verification, status=status, artifacts=[artifact], next_action=str(next_action), confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW)
     if owner._is_source_map_source_content_request(protection_name, context):
         spec = SourceMapSourceContentSpec.from_context(context)
         result = SourceMapSourceContentManager().review(spec)
@@ -145,20 +121,7 @@ def dispatch_source_map_review_evidence(owner: Any, protection_name: str, contex
             path="virtual://workspace/source-map-source-content.json",
             kind=ArtifactKind.JSON,
             description="Native Web runtime review-only Source Map sourcesContent availability descriptor.",
-            metadata={
-                "status": result.status,
-                "source_content_available": bool(descriptor.get("source_content_available", False)),
-                "original_source": request.get("original_source", ""),
-                "source_index": request.get("source_index"),
-                "sha256": content_summary.get("sha256", ""),
-                "review_only": True,
-                "raw_source_content_exported": False,
-                "preview_exported": False,
-                "fetch_source_map": False,
-                "browser_started": False,
-                "cdp_command_sent": False,
-                "runtime_evaluated": False,
-            },
+            metadata={"status": result.status, "source_content_available": bool(descriptor.get("source_content_available", False)), "original_source": request.get("original_source", ""), "source_index": request.get("source_index"), "sha256": content_summary.get("sha256", ""), "review_only": True, "raw_source_content_exported": False, "preview_exported": False, "fetch_source_map": False, "browser_started": False, "cdp_command_sent": False, "runtime_evaluated": False},
         )
         if result.status == "ready_for_review":
             status = ExecutionStatus.SUCCESS
@@ -172,15 +135,7 @@ def dispatch_source_map_review_evidence(owner: Any, protection_name: str, contex
             status = ExecutionStatus.FAILED
             next_action = "inspect_source_map_source_content_descriptor"
             actions = []
-        return ProtectionResult(
-            protection_name=protection_name,
-            applied_actions=actions,
-            verification=verification,
-            status=status,
-            artifacts=[artifact],
-            next_action=str(next_action),
-            confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
-        )
+        return ProtectionResult(protection_name=protection_name, applied_actions=actions, verification=verification, status=status, artifacts=[artifact], next_action=str(next_action), confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW)
     if owner._is_bundler_symbol_scope_request(protection_name, context):
         spec = BundlerSymbolScopeSpec.from_context(context)
         result = BundlerSymbolScopeManager().review(spec)
@@ -208,16 +163,7 @@ def dispatch_source_map_review_evidence(owner: Any, protection_name: str, contex
             path="virtual://workspace/bundler-symbol-scope.json",
             kind=ArtifactKind.JSON,
             description="Native Web runtime review-only bundler symbol scope descriptor.",
-            metadata={
-                "status": result.status,
-                "bundler_kind": classification.get("bundler_kind", "unknown"),
-                "confidence": classification.get("confidence", "low"),
-                "symbol_name": request.get("symbol_name", ""),
-                "scope_candidate_count": descriptor.get("scope_candidate_count", 0),
-                "review_only": True,
-                "fetch_source_map": False,
-                "logpoint_installed": False,
-            },
+            metadata={"status": result.status, "bundler_kind": classification.get("bundler_kind", "unknown"), "confidence": classification.get("confidence", "low"), "symbol_name": request.get("symbol_name", ""), "scope_candidate_count": descriptor.get("scope_candidate_count", 0), "review_only": True, "fetch_source_map": False, "logpoint_installed": False},
         )
         if result.status == "ready_for_review":
             status = ExecutionStatus.SUCCESS
@@ -228,29 +174,12 @@ def dispatch_source_map_review_evidence(owner: Any, protection_name: str, contex
         else:
             status = ExecutionStatus.FAILED
             next_action = "inspect_bundler_symbol_scope_descriptor"
-        return ProtectionResult(
-            protection_name=protection_name,
-            applied_actions=["review_bundler_symbol_scope"] if result.status in {"ready_for_review", "blocked"} else [],
-            verification=verification,
-            status=status,
-            artifacts=[artifact],
-            next_action=next_action,
-            confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
-        )
+        return ProtectionResult(protection_name=protection_name, applied_actions=["review_bundler_symbol_scope"] if result.status in {"ready_for_review", "blocked"} else [], verification=verification, status=status, artifacts=[artifact], next_action=next_action, confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW)
     return None
 
 
-def dispatch_source_map_descriptor_evidence(owner: Any, protection_name: str, context: dict) -> ProtectionResult | None:
-    """Route the next tier of Source Map read-only descriptor / review-plan evidence
-    requests (S2 extraction).
-
-    These 10 predicates are all review-only branches with NO side effects
-    (no browser started, no CDP command, no debugger attach, no hook install,
-    no rebuild, no logpoint apply).  Order matches ``_dispatch_source``.
-    """
-    # ------------------------------------------------------------------ #
-    # Branch 9: source_map_followthrough_dispatch_preflight
-    # ------------------------------------------------------------------ #
+def dispatch_source_map_gateway_a(owner: Any, protection_name: str, context: dict) -> ProtectionResult | None:
+    """Group A: branches before executor chain (dispatch_preflight, one_step_plan, chain_readiness)."""
     if owner._is_source_map_followthrough_dispatch_preflight_request(protection_name, context):
         spec = SourceMapFollowthroughDispatchPreflightSpec.from_context(context)
         result = SourceMapFollowthroughDispatchPreflightManager().review(spec)
@@ -294,49 +223,7 @@ def dispatch_source_map_descriptor_evidence(owner: Any, protection_name: str, co
             verification.append(f"source_map_followthrough_dispatch_preflight_reason={result.reason}")
         if result.error:
             verification.append(f"source_map_followthrough_dispatch_preflight_error={result.error}")
-        artifact = ArtifactRef(
-            path="virtual://workspace/source-map-followthrough-dispatch-preflight.json",
-            kind=ArtifactKind.JSON,
-            description="Native Web runtime read-only Source Map follow-through dispatch preflight descriptor.",
-            metadata={
-                "status": result.status,
-                "selected_consumer": descriptor.get("selected_consumer", ""),
-                "planned_next_action": descriptor.get("planned_next_action", ""),
-                "planned_required_artifact": descriptor.get("planned_required_artifact", ""),
-                "dispatch_surface": dispatch_target.get("dispatch_surface", ""),
-                "dispatcher_input_ready_for_review": bool(descriptor.get("dispatcher_input_ready_for_review", False)),
-                "review_only": True,
-                "preflight_only": True,
-                "plan_only": True,
-                "dispatch_preflight_only": True,
-                "orchestration_only": True,
-                "handoff_only": True,
-                "will_invoke_dispatch_target": False,
-                "will_invoke_next_action": False,
-                "will_record_approval": False,
-                "will_run_apply_preflight": False,
-                "will_execute_debugger": False,
-                "will_install_source_logpoint": False,
-                "will_install_hook": False,
-                "will_run_rebuild": False,
-                "automatic_dispatch_supported": False,
-                "automatic_followthrough_supported": False,
-                "automatic_execution_supported": False,
-                "raw_source_content_exported": False,
-                "preview_exported": False,
-                "fetch_source_map": False,
-                "browser_started": False,
-                "cdp_command_sent": False,
-                "runtime_evaluated": False,
-                "logpoint_installed": False,
-                "hook_installed": False,
-                "rebuild_executed": False,
-                "calls_mcp": False,
-                "mobile_runtime_used": False,
-                "side_effect_policy": policy,
-                "descriptor": descriptor,
-            },
-        )
+        artifact = ArtifactRef(path="virtual://workspace/source-map-followthrough-dispatch-preflight.json", kind=ArtifactKind.JSON, description="Native Web runtime read-only Source Map follow-through dispatch preflight descriptor.", metadata={"status": result.status, "selected_consumer": descriptor.get("selected_consumer", ""), "planned_next_action": descriptor.get("planned_next_action", ""), "planned_required_artifact": descriptor.get("planned_required_artifact", ""), "dispatch_surface": dispatch_target.get("dispatch_surface", ""), "dispatcher_input_ready_for_review": bool(descriptor.get("dispatcher_input_ready_for_review", False)), "review_only": True, "preflight_only": True, "plan_only": True, "dispatch_preflight_only": True, "orchestration_only": True, "handoff_only": True, "will_invoke_dispatch_target": False, "will_invoke_next_action": False, "will_record_approval": False, "will_run_apply_preflight": False, "will_execute_debugger": False, "will_install_source_logpoint": False, "will_install_hook": False, "will_run_rebuild": False, "automatic_dispatch_supported": False, "automatic_followthrough_supported": False, "automatic_execution_supported": False, "raw_source_content_exported": False, "preview_exported": False, "fetch_source_map": False, "browser_started": False, "cdp_command_sent": False, "runtime_evaluated": False, "logpoint_installed": False, "hook_installed": False, "rebuild_executed": False, "calls_mcp": False, "mobile_runtime_used": False, "side_effect_policy": policy, "descriptor": descriptor})
         if result.status == "ready_for_review":
             status = ExecutionStatus.SUCCESS
             next_action = descriptor.get("next_action") or "review_source_map_followthrough_dispatch_preflight_before_explicit_executor_call"
@@ -349,18 +236,7 @@ def dispatch_source_map_descriptor_evidence(owner: Any, protection_name: str, co
             status = ExecutionStatus.FAILED
             next_action = "inspect_source_map_followthrough_dispatch_preflight_descriptor"
             actions = []
-        return ProtectionResult(
-            protection_name=protection_name,
-            applied_actions=actions,
-            verification=verification,
-            status=status,
-            artifacts=[artifact],
-            next_action=str(next_action),
-            confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
-        )
-    # ------------------------------------------------------------------ #
-    # Branch 8: source_map_followthrough_one_step_plan
-    # ------------------------------------------------------------------ #
+        return ProtectionResult(protection_name=protection_name, applied_actions=actions, verification=verification, status=status, artifacts=[artifact], next_action=str(next_action), confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW)
     if owner._is_source_map_followthrough_one_step_plan_request(protection_name, context):
         spec = SourceMapFollowthroughOneStepPlanSpec.from_context(context)
         result = SourceMapFollowthroughOneStepPlanManager().review(spec)
@@ -402,48 +278,7 @@ def dispatch_source_map_descriptor_evidence(owner: Any, protection_name: str, co
             verification.append(f"source_map_followthrough_one_step_plan_reason={result.reason}")
         if result.error:
             verification.append(f"source_map_followthrough_one_step_plan_error={result.error}")
-        artifact = ArtifactRef(
-            path="virtual://workspace/source-map-followthrough-one-step-plan.json",
-            kind=ArtifactKind.JSON,
-            description="Native Web runtime review-only Source Map follow-through one-step orchestration plan.",
-            metadata={
-                "status": result.status,
-                "selected_consumer": descriptor.get("selected_consumer", ""),
-                "source_chain_completed_stage": descriptor.get("source_chain_completed_stage", ""),
-                "source_chain_next_stage": descriptor.get("source_chain_next_stage", ""),
-                "source_chain_next_action": descriptor.get("source_chain_next_action", ""),
-                "source_chain_next_required_artifact": descriptor.get("source_chain_next_required_artifact", ""),
-                "planned_step_ready_for_review": bool(descriptor.get("planned_step_ready_for_review", False)),
-                "step_id": planned_step.get("step_id", ""),
-                "review_only": True,
-                "plan_only": True,
-                "one_step_plan_only": True,
-                "orchestration_only": True,
-                "handoff_only": True,
-                "will_invoke_next_action": False,
-                "will_record_approval": False,
-                "will_run_apply_preflight": False,
-                "will_execute_debugger": False,
-                "will_install_source_logpoint": False,
-                "will_install_hook": False,
-                "will_run_rebuild": False,
-                "automatic_followthrough_supported": False,
-                "automatic_execution_supported": False,
-                "raw_source_content_exported": False,
-                "preview_exported": False,
-                "fetch_source_map": False,
-                "browser_started": False,
-                "cdp_command_sent": False,
-                "runtime_evaluated": False,
-                "logpoint_installed": False,
-                "hook_installed": False,
-                "rebuild_executed": False,
-                "calls_mcp": False,
-                "mobile_runtime_used": False,
-                "side_effect_policy": policy,
-                "descriptor": descriptor,
-            },
-        )
+        artifact = ArtifactRef(path="virtual://workspace/source-map-followthrough-one-step-plan.json", kind=ArtifactKind.JSON, description="Native Web runtime review-only Source Map follow-through one-step orchestration plan.", metadata={"status": result.status, "selected_consumer": descriptor.get("selected_consumer", ""), "source_chain_completed_stage": descriptor.get("source_chain_completed_stage", ""), "source_chain_next_stage": descriptor.get("source_chain_next_stage", ""), "source_chain_next_action": descriptor.get("source_chain_next_action", ""), "source_chain_next_required_artifact": descriptor.get("source_chain_next_required_artifact", ""), "planned_step_ready_for_review": bool(descriptor.get("planned_step_ready_for_review", False)), "step_id": planned_step.get("step_id", ""), "review_only": True, "plan_only": True, "one_step_plan_only": True, "orchestration_only": True, "handoff_only": True, "will_invoke_next_action": False, "will_record_approval": False, "will_run_apply_preflight": False, "will_execute_debugger": False, "will_install_source_logpoint": False, "will_install_hook": False, "will_run_rebuild": False, "automatic_followthrough_supported": False, "automatic_execution_supported": False, "raw_source_content_exported": False, "preview_exported": False, "fetch_source_map": False, "browser_started": False, "cdp_command_sent": False, "runtime_evaluated": False, "logpoint_installed": False, "hook_installed": False, "rebuild_executed": False, "calls_mcp": False, "mobile_runtime_used": False, "side_effect_policy": policy, "descriptor": descriptor})
         if result.status == "ready_for_review":
             status = ExecutionStatus.SUCCESS
             next_action = descriptor.get("next_action") or "review_source_map_followthrough_one_step_plan_before_next_action"
@@ -456,18 +291,7 @@ def dispatch_source_map_descriptor_evidence(owner: Any, protection_name: str, co
             status = ExecutionStatus.FAILED
             next_action = "inspect_source_map_followthrough_one_step_plan_descriptor"
             actions = []
-        return ProtectionResult(
-            protection_name=protection_name,
-            applied_actions=actions,
-            verification=verification,
-            status=status,
-            artifacts=[artifact],
-            next_action=str(next_action),
-            confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
-        )
-    # ------------------------------------------------------------------ #
-    # Branch 7: source_map_followthrough_chain_readiness
-    # ------------------------------------------------------------------ #
+        return ProtectionResult(protection_name=protection_name, applied_actions=actions, verification=verification, status=status, artifacts=[artifact], next_action=str(next_action), confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW)
     if owner._is_source_map_followthrough_chain_readiness_request(protection_name, context):
         spec = SourceMapFollowthroughChainReadinessSpec.from_context(context)
         result = SourceMapFollowthroughChainReadinessManager().review(spec)
@@ -502,38 +326,7 @@ def dispatch_source_map_descriptor_evidence(owner: Any, protection_name: str, co
             verification.append(f"source_map_followthrough_chain_readiness_reason={result.reason}")
         if result.error:
             verification.append(f"source_map_followthrough_chain_readiness_error={result.error}")
-        artifact = ArtifactRef(
-            path="virtual://workspace/source-map-followthrough-chain-readiness.json",
-            kind=ArtifactKind.JSON,
-            description="Native Web runtime read-only Source Map follow-through chain readiness descriptor.",
-            metadata={
-                "status": result.status,
-                "selected_consumer": descriptor.get("selected_consumer", ""),
-                "completed_stage": descriptor.get("completed_stage", ""),
-                "next_stage": descriptor.get("next_stage", ""),
-                "next_required_artifact": descriptor.get("next_required_artifact", ""),
-                "next_required_action": descriptor.get("next_required_action", ""),
-                "selected_executor_result_ready": bool(descriptor.get("selected_executor_result_ready", False)),
-                "ready_for_selected_executor_review": bool(descriptor.get("ready_for_selected_executor_review", False)),
-                "review_only": True,
-                "plan_only": True,
-                "readiness_descriptor_only": True,
-                "orchestration_only": True,
-                "handoff_only": True,
-                "automatic_followthrough_supported": False,
-                "raw_source_content_exported": False,
-                "preview_exported": False,
-                "fetch_source_map": False,
-                "browser_started": False,
-                "cdp_command_sent": False,
-                "runtime_evaluated": False,
-                "logpoint_installed": False,
-                "hook_installed": False,
-                "rebuild_executed": False,
-                "calls_mcp": False,
-                "mobile_runtime_used": False,
-            },
-        )
+        artifact = ArtifactRef(path="virtual://workspace/source-map-followthrough-chain-readiness.json", kind=ArtifactKind.JSON, description="Native Web runtime read-only Source Map follow-through chain readiness descriptor.", metadata={"status": result.status, "selected_consumer": descriptor.get("selected_consumer", ""), "completed_stage": descriptor.get("completed_stage", ""), "next_stage": descriptor.get("next_stage", ""), "next_required_artifact": descriptor.get("next_required_artifact", ""), "next_required_action": descriptor.get("next_required_action", ""), "selected_executor_result_ready": bool(descriptor.get("selected_executor_result_ready", False)), "ready_for_selected_executor_review": bool(descriptor.get("ready_for_selected_executor_review", False)), "review_only": True, "plan_only": True, "readiness_descriptor_only": True, "orchestration_only": True, "handoff_only": True, "automatic_followthrough_supported": False, "raw_source_content_exported": False, "preview_exported": False, "fetch_source_map": False, "browser_started": False, "cdp_command_sent": False, "runtime_evaluated": False, "logpoint_installed": False, "hook_installed": False, "rebuild_executed": False, "calls_mcp": False, "mobile_runtime_used": False})
         if result.status == "ready_for_review":
             status = ExecutionStatus.SUCCESS
             next_action = descriptor.get("next_action") or "review_source_map_followthrough_chain_readiness"
@@ -546,18 +339,12 @@ def dispatch_source_map_descriptor_evidence(owner: Any, protection_name: str, co
             status = ExecutionStatus.FAILED
             next_action = "inspect_source_map_followthrough_chain_readiness_descriptor"
             actions = []
-        return ProtectionResult(
-            protection_name=protection_name,
-            applied_actions=actions,
-            verification=verification,
-            status=status,
-            artifacts=[artifact],
-            next_action=str(next_action),
-            confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
-        )
-    # ------------------------------------------------------------------ #
-    # Branch 10: source_map_terminal_review_package
-    # ------------------------------------------------------------------ #
+        return ProtectionResult(protection_name=protection_name, applied_actions=actions, verification=verification, status=status, artifacts=[artifact], next_action=str(next_action), confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW)
+    return None
+
+
+def dispatch_source_map_gateway_b(owner: Any, protection_name: str, context: dict) -> ProtectionResult | None:
+    """Group B: branches after executor chain (terminal_review_package through readiness)."""
     if owner._is_source_map_terminal_review_package_request(protection_name, context):
         spec = SourceMapTerminalReviewPackageSpec.from_context(context)
         result = SourceMapTerminalReviewPackageManager().review(spec)
@@ -593,36 +380,7 @@ def dispatch_source_map_descriptor_evidence(owner: Any, protection_name: str, co
             verification.append(f"source_map_terminal_review_package_reason={result.reason}")
         if result.error:
             verification.append(f"source_map_terminal_review_package_error={result.error}")
-        artifact = ArtifactRef(
-            path="virtual://workspace/source-map-terminal-review-package.json",
-            kind=ArtifactKind.JSON,
-            description="Native Web runtime read-only Source Map terminal review package / audit handoff.",
-            metadata={
-                "status": result.status,
-                "selected_action_id": descriptor.get("selected_action_id", ""),
-                "selected_consumer": descriptor.get("selected_consumer", ""),
-                "completion_status": descriptor.get("completion_status", ""),
-                "terminal_review_candidate": bool(descriptor.get("terminal_review_candidate", False)),
-                "followup_required": bool(descriptor.get("followup_required", False)),
-                "package_kind": package.get("package_kind", ""),
-                "recommended_review_action": package.get("recommended_review_action", ""),
-                "source_completion_checkpoint_digest_sha256": descriptor.get("source_completion_checkpoint_digest_sha256", ""),
-                "ready_for_terminal_review": bool(descriptor.get("ready_for_terminal_review", False)),
-                "ready_for_audit_handoff_review": bool(descriptor.get("ready_for_audit_handoff_review", False)),
-                "ready_to_execute_now": False,
-                "execute_next_automatically": False,
-                "automatic_followthrough_supported": False,
-                "recommended_action_executed": False,
-                "review_only": True,
-                "audit_handoff_only": True,
-                "terminal_review_package_only": True,
-                "browser_started_by_package": False,
-                "cdp_command_sent_by_package": False,
-                "runtime_evaluated_by_package": False,
-                "calls_mcp": False,
-                "mobile_runtime_used": False,
-            },
-        )
+        artifact = ArtifactRef(path="virtual://workspace/source-map-terminal-review-package.json", kind=ArtifactKind.JSON, description="Native Web runtime read-only Source Map terminal review package / audit handoff.", metadata={"status": result.status, "selected_action_id": descriptor.get("selected_action_id", ""), "selected_consumer": descriptor.get("selected_consumer", ""), "completion_status": descriptor.get("completion_status", ""), "terminal_review_candidate": bool(descriptor.get("terminal_review_candidate", False)), "followup_required": bool(descriptor.get("followup_required", False)), "package_kind": package.get("package_kind", ""), "recommended_review_action": package.get("recommended_review_action", ""), "source_completion_checkpoint_digest_sha256": descriptor.get("source_completion_checkpoint_digest_sha256", ""), "ready_for_terminal_review": bool(descriptor.get("ready_for_terminal_review", False)), "ready_for_audit_handoff_review": bool(descriptor.get("ready_for_audit_handoff_review", False)), "ready_to_execute_now": False, "execute_next_automatically": False, "automatic_followthrough_supported": False, "recommended_action_executed": False, "review_only": True, "audit_handoff_only": True, "terminal_review_package_only": True, "browser_started_by_package": False, "cdp_command_sent_by_package": False, "runtime_evaluated_by_package": False, "calls_mcp": False, "mobile_runtime_used": False})
         if result.status == "ready_for_review":
             status = ExecutionStatus.SUCCESS
             next_action = descriptor.get("next_action") or "review_source_map_terminal_review_package"
@@ -635,18 +393,7 @@ def dispatch_source_map_descriptor_evidence(owner: Any, protection_name: str, co
             status = ExecutionStatus.FAILED
             next_action = "inspect_source_map_terminal_review_package_descriptor"
             actions = []
-        return ProtectionResult(
-            protection_name=protection_name,
-            applied_actions=actions,
-            verification=verification,
-            status=status,
-            artifacts=[artifact],
-            next_action=str(next_action),
-            confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
-        )
-    # ------------------------------------------------------------------ #
-    # Branch 6: source_map_followthrough_surface_selection
-    # ------------------------------------------------------------------ #
+        return ProtectionResult(protection_name=protection_name, applied_actions=actions, verification=verification, status=status, artifacts=[artifact], next_action=str(next_action), confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW)
     if owner._is_source_map_followthrough_surface_selection_request(protection_name, context):
         spec = SourceMapFollowthroughSurfaceSelectionSpec.from_context(context)
         result = SourceMapFollowthroughSurfaceSelectionManager().review(spec)
@@ -684,33 +431,7 @@ def dispatch_source_map_descriptor_evidence(owner: Any, protection_name: str, co
             verification.append(f"source_map_followthrough_surface_selection_reason={result.reason}")
         if result.error:
             verification.append(f"source_map_followthrough_surface_selection_error={result.error}")
-        artifact = ArtifactRef(
-            path="virtual://workspace/source-map-followthrough-surface-selection.json",
-            kind=ArtifactKind.JSON,
-            description="Native Web runtime review-only Source Map follow-through single-surface selection descriptor.",
-            metadata={
-                "status": result.status,
-                "candidate_review_count": descriptor.get("candidate_review_count", 0),
-                "selected_action_id": descriptor.get("selected_action_id", ""),
-                "selected_consumer": descriptor.get("selected_consumer", ""),
-                "selected_followthrough_review_surface": descriptor.get("selected_followthrough_review_surface", ""),
-                "selected_payload_kind": selected_review.get("payload_kind", ""),
-                "ready_for_surface_review": bool(descriptor.get("ready_for_surface_review", False)),
-                "review_only": True,
-                "plan_only": True,
-                "selection_only": True,
-                "handoff_only": True,
-                "raw_source_content_exported": False,
-                "preview_exported": False,
-                "fetch_source_map": False,
-                "browser_started": False,
-                "cdp_command_sent": False,
-                "runtime_evaluated": False,
-                "logpoint_installed": False,
-                "hook_installed": False,
-                "rebuild_executed": False,
-            },
-        )
+        artifact = ArtifactRef(path="virtual://workspace/source-map-followthrough-surface-selection.json", kind=ArtifactKind.JSON, description="Native Web runtime review-only Source Map follow-through single-surface selection descriptor.", metadata={"status": result.status, "candidate_review_count": descriptor.get("candidate_review_count", 0), "selected_action_id": descriptor.get("selected_action_id", ""), "selected_consumer": descriptor.get("selected_consumer", ""), "selected_followthrough_review_surface": descriptor.get("selected_followthrough_review_surface", ""), "selected_payload_kind": selected_review.get("payload_kind", ""), "ready_for_surface_review": bool(descriptor.get("ready_for_surface_review", False)), "review_only": True, "plan_only": True, "selection_only": True, "handoff_only": True, "raw_source_content_exported": False, "preview_exported": False, "fetch_source_map": False, "browser_started": False, "cdp_command_sent": False, "runtime_evaluated": False, "logpoint_installed": False, "hook_installed": False, "rebuild_executed": False})
         if result.status == "ready_for_review":
             status = ExecutionStatus.SUCCESS
             next_action = descriptor.get("next_action") or "review_selected_source_map_followthrough_surface_before_execution"
@@ -723,18 +444,7 @@ def dispatch_source_map_descriptor_evidence(owner: Any, protection_name: str, co
             status = ExecutionStatus.FAILED
             next_action = "inspect_source_map_followthrough_surface_selection_descriptor"
             actions = []
-        return ProtectionResult(
-            protection_name=protection_name,
-            applied_actions=actions,
-            verification=verification,
-            status=status,
-            artifacts=[artifact],
-            next_action=str(next_action),
-            confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
-        )
-    # ------------------------------------------------------------------ #
-    # Branch 5: source_map_followthrough_review
-    # ------------------------------------------------------------------ #
+        return ProtectionResult(protection_name=protection_name, applied_actions=actions, verification=verification, status=status, artifacts=[artifact], next_action=str(next_action), confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW)
     if owner._is_source_map_followthrough_review_request(protection_name, context):
         spec = SourceMapFollowthroughReviewSpec.from_context(context)
         result = SourceMapFollowthroughReviewManager().review(spec)
@@ -774,32 +484,7 @@ def dispatch_source_map_descriptor_evidence(owner: Any, protection_name: str, co
             verification.append(f"source_map_followthrough_review_reason={result.reason}")
         if result.error:
             verification.append(f"source_map_followthrough_review_error={result.error}")
-        artifact = ArtifactRef(
-            path="virtual://workspace/source-map-followthrough-review.json",
-            kind=ArtifactKind.JSON,
-            description="Native Web runtime review-only Source Map follow-through review surface descriptor.",
-            metadata={
-                "status": result.status,
-                "typed_payload_schema_version": descriptor.get("typed_payload_schema_version", ""),
-                "followthrough_review_count": len(reviews),
-                "ready_followthrough_review_count": descriptor.get("ready_followthrough_review_count", 0),
-                "consumers": consumers,
-                "followthrough_review_surfaces": surfaces,
-                "ready_for_explicit_review": bool(descriptor.get("ready_for_explicit_review", False)),
-                "review_only": True,
-                "plan_only": True,
-                "handoff_only": True,
-                "raw_source_content_exported": False,
-                "preview_exported": False,
-                "fetch_source_map": False,
-                "browser_started": False,
-                "cdp_command_sent": False,
-                "runtime_evaluated": False,
-                "logpoint_installed": False,
-                "hook_installed": False,
-                "rebuild_executed": False,
-            },
-        )
+        artifact = ArtifactRef(path="virtual://workspace/source-map-followthrough-review.json", kind=ArtifactKind.JSON, description="Native Web runtime review-only Source Map follow-through review surface descriptor.", metadata={"status": result.status, "typed_payload_schema_version": descriptor.get("typed_payload_schema_version", ""), "followthrough_review_count": len(reviews), "ready_followthrough_review_count": descriptor.get("ready_followthrough_review_count", 0), "consumers": consumers, "followthrough_review_surfaces": surfaces, "ready_for_explicit_review": bool(descriptor.get("ready_for_explicit_review", False)), "review_only": True, "plan_only": True, "handoff_only": True, "raw_source_content_exported": False, "preview_exported": False, "fetch_source_map": False, "browser_started": False, "cdp_command_sent": False, "runtime_evaluated": False, "logpoint_installed": False, "hook_installed": False, "rebuild_executed": False})
         if result.status == "ready_for_review":
             status = ExecutionStatus.SUCCESS
             next_action = descriptor.get("next_action") or "choose_explicit_source_map_followthrough_review_surface"
@@ -812,18 +497,7 @@ def dispatch_source_map_descriptor_evidence(owner: Any, protection_name: str, co
             status = ExecutionStatus.FAILED
             next_action = "inspect_source_map_followthrough_review_descriptor"
             actions = []
-        return ProtectionResult(
-            protection_name=protection_name,
-            applied_actions=actions,
-            verification=verification,
-            status=status,
-            artifacts=[artifact],
-            next_action=str(next_action),
-            confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
-        )
-    # ------------------------------------------------------------------ #
-    # Branch 4: source_map_typed_payload_preflight
-    # ------------------------------------------------------------------ #
+        return ProtectionResult(protection_name=protection_name, applied_actions=actions, verification=verification, status=status, artifacts=[artifact], next_action=str(next_action), confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW)
     if owner._is_source_map_typed_payload_preflight_request(protection_name, context):
         spec = SourceMapTypedPayloadPreflightSpec.from_context(context)
         result = SourceMapTypedPayloadPreflightManager().review(spec)
@@ -862,31 +536,7 @@ def dispatch_source_map_descriptor_evidence(owner: Any, protection_name: str, co
             verification.append(f"source_map_typed_payload_preflight_reason={result.reason}")
         if result.error:
             verification.append(f"source_map_typed_payload_preflight_error={result.error}")
-        artifact = ArtifactRef(
-            path="virtual://workspace/source-map-typed-payload-preflight.json",
-            kind=ArtifactKind.JSON,
-            description="Native Web runtime review-only Source Map typed payload follow-through preflight descriptor.",
-            metadata={
-                "status": result.status,
-                "typed_payload_schema_version": descriptor.get("typed_payload_schema_version", ""),
-                "preflight_payload_count": len(preflights),
-                "consumers": consumers,
-                "followthrough_review_surfaces": surfaces,
-                "ready_for_followthrough_review": bool(descriptor.get("ready_for_followthrough_review", False)),
-                "review_only": True,
-                "plan_only": True,
-                "preflight_only": True,
-                "raw_source_content_exported": False,
-                "preview_exported": False,
-                "fetch_source_map": False,
-                "browser_started": False,
-                "cdp_command_sent": False,
-                "runtime_evaluated": False,
-                "logpoint_installed": False,
-                "hook_installed": False,
-                "rebuild_executed": False,
-            },
-        )
+        artifact = ArtifactRef(path="virtual://workspace/source-map-typed-payload-preflight.json", kind=ArtifactKind.JSON, description="Native Web runtime review-only Source Map typed payload follow-through preflight descriptor.", metadata={"status": result.status, "typed_payload_schema_version": descriptor.get("typed_payload_schema_version", ""), "preflight_payload_count": len(preflights), "consumers": consumers, "followthrough_review_surfaces": surfaces, "ready_for_followthrough_review": bool(descriptor.get("ready_for_followthrough_review", False)), "review_only": True, "plan_only": True, "preflight_only": True, "raw_source_content_exported": False, "preview_exported": False, "fetch_source_map": False, "browser_started": False, "cdp_command_sent": False, "runtime_evaluated": False, "logpoint_installed": False, "hook_installed": False, "rebuild_executed": False})
         if result.status == "ready_for_review":
             status = ExecutionStatus.SUCCESS
             next_action = descriptor.get("next_action") or "review_source_map_typed_payload_preflight_before_explicit_debugger_logpoint_rebuild_or_hook_execution"
@@ -899,18 +549,7 @@ def dispatch_source_map_descriptor_evidence(owner: Any, protection_name: str, co
             status = ExecutionStatus.FAILED
             next_action = "inspect_source_map_typed_payload_preflight_descriptor"
             actions = []
-        return ProtectionResult(
-            protection_name=protection_name,
-            applied_actions=actions,
-            verification=verification,
-            status=status,
-            artifacts=[artifact],
-            next_action=str(next_action),
-            confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
-        )
-    # ------------------------------------------------------------------ #
-    # Branch 3: source_map_consumer_materialization
-    # ------------------------------------------------------------------ #
+        return ProtectionResult(protection_name=protection_name, applied_actions=actions, verification=verification, status=status, artifacts=[artifact], next_action=str(next_action), confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW)
     if owner._is_source_map_consumer_materialization_request(protection_name, context):
         spec = SourceMapConsumerMaterializationSpec.from_context(context)
         result = SourceMapConsumerMaterializationManager().review(spec)
@@ -925,13 +564,7 @@ def dispatch_source_map_descriptor_evidence(owner: Any, protection_name: str, co
         if not isinstance(typed_payloads, list):
             typed_payloads = []
         typed_payload_count = len([item for item in typed_payloads if isinstance(item, dict)])
-        typed_payload_consumers = sorted(
-            {
-                str(item.get("consumer"))
-                for item in typed_payloads
-                if isinstance(item, dict) and item.get("consumer")
-            }
-        )
+        typed_payload_consumers = sorted({str(item.get("consumer")) for item in typed_payloads if isinstance(item, dict) and item.get("consumer")})
         typed_payload_schema_version = str(descriptor.get("typed_payload_schema_version") or "")
         verification = [
             f"source_map_consumer_materialization_status={result.status}",
@@ -961,31 +594,7 @@ def dispatch_source_map_descriptor_evidence(owner: Any, protection_name: str, co
             verification.append(f"source_map_consumer_materialization_reason={result.reason}")
         if result.error:
             verification.append(f"source_map_consumer_materialization_error={result.error}")
-        artifact = ArtifactRef(
-            path="virtual://workspace/source-map-consumer-materialization.json",
-            kind=ArtifactKind.JSON,
-            description="Native Web runtime review-only Source Map consumer materialization descriptor.",
-            metadata={
-                "status": result.status,
-                "materialization_count": len(materializations),
-                "consumers": consumers,
-                "materialization_kinds": kinds,
-                "typed_payload_schema_version": typed_payload_schema_version,
-                "typed_review_payload_count": typed_payload_count,
-                "typed_review_payload_consumers": typed_payload_consumers,
-                "review_only": True,
-                "plan_only": True,
-                "raw_source_content_exported": False,
-                "preview_exported": False,
-                "fetch_source_map": False,
-                "browser_started": False,
-                "cdp_command_sent": False,
-                "runtime_evaluated": False,
-                "logpoint_installed": False,
-                "hook_installed": False,
-                "rebuild_executed": False,
-            },
-        )
+        artifact = ArtifactRef(path="virtual://workspace/source-map-consumer-materialization.json", kind=ArtifactKind.JSON, description="Native Web runtime review-only Source Map consumer materialization descriptor.", metadata={"status": result.status, "materialization_count": len(materializations), "consumers": consumers, "materialization_kinds": kinds, "typed_payload_schema_version": typed_payload_schema_version, "typed_review_payload_count": typed_payload_count, "typed_review_payload_consumers": typed_payload_consumers, "review_only": True, "plan_only": True, "raw_source_content_exported": False, "preview_exported": False, "fetch_source_map": False, "browser_started": False, "cdp_command_sent": False, "runtime_evaluated": False, "logpoint_installed": False, "hook_installed": False, "rebuild_executed": False})
         if result.status == "ready_for_review":
             status = ExecutionStatus.SUCCESS
             next_action = descriptor.get("next_action") or "review_source_map_consumer_materialization_before_debugger_rebuild_logpoint_or_hook_execution"
@@ -998,18 +607,7 @@ def dispatch_source_map_descriptor_evidence(owner: Any, protection_name: str, co
             status = ExecutionStatus.FAILED
             next_action = "inspect_source_map_consumer_materialization_descriptor"
             actions = []
-        return ProtectionResult(
-            protection_name=protection_name,
-            applied_actions=actions,
-            verification=verification,
-            status=status,
-            artifacts=[artifact],
-            next_action=str(next_action),
-            confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
-        )
-    # ------------------------------------------------------------------ #
-    # Branch 2: source_map_consumer_action_plan
-    # ------------------------------------------------------------------ #
+        return ProtectionResult(protection_name=protection_name, applied_actions=actions, verification=verification, status=status, artifacts=[artifact], next_action=str(next_action), confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW)
     if owner._is_source_map_consumer_action_plan_request(protection_name, context):
         spec = SourceMapConsumerActionPlanSpec.from_context(context)
         result = SourceMapConsumerActionPlanManager().review(spec)
@@ -1047,27 +645,7 @@ def dispatch_source_map_descriptor_evidence(owner: Any, protection_name: str, co
             verification.append(f"source_map_consumer_action_plan_reason={result.reason}")
         if result.error:
             verification.append(f"source_map_consumer_action_plan_error={result.error}")
-        artifact = ArtifactRef(
-            path="virtual://workspace/source-map-consumer-action-plan.json",
-            kind=ArtifactKind.JSON,
-            description="Native Web runtime review-only Source Map consumer action plan descriptor.",
-            metadata={
-                "status": result.status,
-                "action_plan_count": len(action_plans),
-                "consumers": consumers,
-                "review_only": True,
-                "plan_only": True,
-                "raw_source_content_exported": False,
-                "preview_exported": False,
-                "fetch_source_map": False,
-                "browser_started": False,
-                "cdp_command_sent": False,
-                "runtime_evaluated": False,
-                "logpoint_installed": False,
-                "hook_installed": False,
-                "rebuild_executed": False,
-            },
-        )
+        artifact = ArtifactRef(path="virtual://workspace/source-map-consumer-action-plan.json", kind=ArtifactKind.JSON, description="Native Web runtime review-only Source Map consumer action plan descriptor.", metadata={"status": result.status, "action_plan_count": len(action_plans), "consumers": consumers, "review_only": True, "plan_only": True, "raw_source_content_exported": False, "preview_exported": False, "fetch_source_map": False, "browser_started": False, "cdp_command_sent": False, "runtime_evaluated": False, "logpoint_installed": False, "hook_installed": False, "rebuild_executed": False})
         if result.status == "ready_for_review":
             status = ExecutionStatus.SUCCESS
             next_action = descriptor.get("next_action") or "review_source_map_consumer_action_plan_before_debugger_rebuild_or_logpoint_execution"
@@ -1080,18 +658,7 @@ def dispatch_source_map_descriptor_evidence(owner: Any, protection_name: str, co
             status = ExecutionStatus.FAILED
             next_action = "inspect_source_map_consumer_action_plan_descriptor"
             actions = []
-        return ProtectionResult(
-            protection_name=protection_name,
-            applied_actions=actions,
-            verification=verification,
-            status=status,
-            artifacts=[artifact],
-            next_action=str(next_action),
-            confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
-        )
-    # ------------------------------------------------------------------ #
-    # Branch 1: source_map_readiness
-    # ------------------------------------------------------------------ #
+        return ProtectionResult(protection_name=protection_name, applied_actions=actions, verification=verification, status=status, artifacts=[artifact], next_action=str(next_action), confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW)
     if owner._is_source_map_readiness_request(protection_name, context):
         spec = SourceMapReadinessSpec.from_context(context)
         result = SourceMapReadinessManager().review(spec)
@@ -1126,28 +693,7 @@ def dispatch_source_map_descriptor_evidence(owner: Any, protection_name: str, co
             verification.append(f"source_map_readiness_reason={result.reason}")
         if result.error:
             verification.append(f"source_map_readiness_error={result.error}")
-        artifact = ArtifactRef(
-            path="virtual://workspace/source-map-readiness.json",
-            kind=ArtifactKind.JSON,
-            description="Native Web runtime review-only Source Map readiness descriptor.",
-            metadata={
-                "status": result.status,
-                "debugger_location_ready": bool(readiness.get("debugger_location_ready", False)),
-                "source_content_metadata_ready": bool(readiness.get("source_content_metadata_ready", False)),
-                "rebuild_source_metadata_ready": bool(readiness.get("rebuild_source_metadata_ready", False)),
-                "source_logpoint_planning_ready": bool(readiness.get("source_logpoint_planning_ready", False)),
-                "bundler_scope_review_ready": bool(readiness.get("bundler_scope_review_ready", False)),
-                "sha256": source_content.get("sha256", ""),
-                "review_only": True,
-                "raw_source_content_exported": False,
-                "preview_exported": False,
-                "fetch_source_map": False,
-                "browser_started": False,
-                "cdp_command_sent": False,
-                "runtime_evaluated": False,
-                "logpoint_installed": False,
-            },
-        )
+        artifact = ArtifactRef(path="virtual://workspace/source-map-readiness.json", kind=ArtifactKind.JSON, description="Native Web runtime review-only Source Map readiness descriptor.", metadata={"status": result.status, "debugger_location_ready": bool(readiness.get("debugger_location_ready", False)), "source_content_metadata_ready": bool(readiness.get("source_content_metadata_ready", False)), "rebuild_source_metadata_ready": bool(readiness.get("rebuild_source_metadata_ready", False)), "source_logpoint_planning_ready": bool(readiness.get("source_logpoint_planning_ready", False)), "bundler_scope_review_ready": bool(readiness.get("bundler_scope_review_ready", False)), "sha256": source_content.get("sha256", ""), "review_only": True, "raw_source_content_exported": False, "preview_exported": False, "fetch_source_map": False, "browser_started": False, "cdp_command_sent": False, "runtime_evaluated": False, "logpoint_installed": False})
         if result.status == "ready_for_review":
             status = ExecutionStatus.SUCCESS
             next_action = descriptor.get("next_action") or "review_source_map_readiness_before_debugger_rebuild_or_logpoint_planning"
@@ -1160,13 +706,5 @@ def dispatch_source_map_descriptor_evidence(owner: Any, protection_name: str, co
             status = ExecutionStatus.FAILED
             next_action = "inspect_source_map_readiness_descriptor"
             actions = []
-        return ProtectionResult(
-            protection_name=protection_name,
-            applied_actions=actions,
-            verification=verification,
-            status=status,
-            artifacts=[artifact],
-            next_action=str(next_action),
-            confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
-        )
+        return ProtectionResult(protection_name=protection_name, applied_actions=actions, verification=verification, status=status, artifacts=[artifact], next_action=str(next_action), confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW)
     return None

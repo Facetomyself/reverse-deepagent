@@ -1373,7 +1373,8 @@ def run_reverse_pipeline(
 
     task_card = normalize_task_card(task_text)
     route_result = route_from_task_card(task_card, task_text=task_text)
-    chrome_launch, should_stop_chrome = launch_browser_if_legacy_mcp(runtime_kind, chrome_config, ensure_chrome, keep_chrome)
+    chrome_launch = None
+    should_stop_chrome = False
     chrome_stop = None
     owns_runtime = runtime is None
     active_runtime = runtime or build_runtime(
@@ -1390,6 +1391,8 @@ def run_reverse_pipeline(
                 "run_reverse_pipeline is the Web pipeline entrypoint."
             )
         runtime_capabilities = active_runtime.describe_capabilities()
+
+        chrome_launch, should_stop_chrome = launch_browser_if_legacy_mcp(runtime_kind, chrome_config, ensure_chrome, keep_chrome)
 
         recon_result = active_runtime.run_web_recon(task_card=task_card, route_result=route_result)
         final_result = _final_from_recon(task_card, route_result, recon_result)

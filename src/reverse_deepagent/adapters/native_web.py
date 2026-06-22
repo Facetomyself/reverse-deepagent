@@ -335,7 +335,8 @@ from reverse_deepagent.schemas import (
 )
 from reverse_deepagent.adapters._native_web_request_matchers import _NativeWebRequestMatchers
 from reverse_deepagent.adapters.native_web_source_dispatch import (
-    dispatch_source_map_descriptor_evidence,
+    dispatch_source_map_gateway_a,
+    dispatch_source_map_gateway_b,
     dispatch_source_map_review_evidence,
 )
 
@@ -4677,7 +4678,7 @@ class NativeWebRuntime(_NativeWebRequestMatchers, WebReverseRuntime):
                 next_action=str(next_action),
                 confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
             )
-        result = dispatch_source_map_descriptor_evidence(self, protection_name, context)
+        result = dispatch_source_map_gateway_a(self, protection_name, context)
         if result is not None:
             return result
         if self._is_source_map_selected_executor_application_handoff_request(protection_name, context):
@@ -5442,6 +5443,9 @@ class NativeWebRuntime(_NativeWebRequestMatchers, WebReverseRuntime):
                 next_action=str(next_action),
                 confidence=ConfidenceLevel.MEDIUM if result.status == "ready_for_review" else ConfidenceLevel.LOW,
             )
+        result = dispatch_source_map_gateway_b(self, protection_name, context)
+        if result is not None:
+            return result
         result = dispatch_source_map_review_evidence(self, protection_name, context)
         if result is not None:
             return result
