@@ -24,6 +24,7 @@ from reverse_deepagent.runtime.manifest import (
     _artifact_category_from_key,
     _build_backend_artifact_manifest,
 )
+from reverse_deepagent.browser_provider_smoke_acceptance import browser_provider_smoke_acceptance as _browser_smoke_impl
 from reverse_deepagent.runtime.registry import (
     DEFAULT_RUNTIME_BACKEND_REGISTRY,
     build_default_runtime_registry,
@@ -120,8 +121,9 @@ def write_outputs(
     final_result: FinalResult,
     export_bundle: dict[str, Any],
     runtime_capabilities: RuntimeBackendCapabilities | None = None,
+    browser_provider_smoke: dict[str, Any] | None = None,
     enable_workspace_dual_write: bool = False,
-) -> dict[str, str]:
+    workspace_dual_write_artifact_keys: set[str] | None = None,) -> dict[str, str]:
     """Persist the standard workspace/report/export artifact set."""
 
     workspace_dir = base_dir / "workspace"
@@ -131,7 +133,7 @@ def write_outputs(
     reports_dir.mkdir(parents=True, exist_ok=True)
     exports_dir.mkdir(parents=True, exist_ok=True)
 
-    workspace_resolver = WorkspacePathResolver(enable_dual_write=enable_workspace_dual_write)
+    workspace_resolver = WorkspacePathResolver(enable_dual_write=enable_workspace_dual_write, dual_write_artifact_keys=workspace_dual_write_artifact_keys)
     workspace_write_records: list[dict[str, Any]] = []
     report_json_path = reports_dir / "demo-final-result.json"
     report_md_path = reports_dir / "demo-final-report.md"
@@ -175,6 +177,21 @@ def write_outputs(
     output_paths["workspace_backend_artifact_manifest"] = str(manifest_path)
 
     capabilities = runtime_capabilities or RuntimeBackendCapabilities(backend_id="unknown", display_name="Unknown Runtime")
+    browser_provider_smoke_path: Path | None = None
+    browser_provider_smoke_attachment: dict[str, Any] | None = None
+    browser_provider_smoke_acceptance: dict[str, Any] | None = None
+    if browser_provider_smoke is not None:
+        browser_provider_smoke_attachment = dict(browser_provider_smoke)
+        browser_provider_smoke_acceptance = _browser_provider_smoke_acceptance(browser_provider_smoke_attachment, capabilities)
+        browser_provider_smoke_attachment["attachment_acceptance"] = browser_provider_smoke_acceptance
+        browser_provider_smoke_path = _write_workspace_json(
+            base_dir,
+            "workspace_browser_provider_smoke",
+            browser_provider_smoke_attachment,
+            workspace_resolver,
+            workspace_write_records,
+        )
+        output_paths["workspace_browser_provider_smoke"] = str(browser_provider_smoke_path)
     runtime_artifacts = export_bundle.get("artifacts", []) if isinstance(export_bundle, dict) else []
     backend_artifact_manifest = _build_backend_artifact_manifest(capabilities, output_paths, extra_artifacts=runtime_artifacts)
     manifest_path = _write_workspace_json(base_dir, "workspace_backend_artifact_manifest", backend_artifact_manifest.model_dump(mode="json"), workspace_resolver, workspace_write_records)
@@ -202,10 +219,14 @@ def write_outputs(
         "rebuild_result": rebuild_result.model_dump(mode="json"),
     }
     if enable_workspace_dual_write:
-        dual_write_plan = _workspace_dual_write_plan_payload(workspace_write_records)
+        dual_write_plan = _workspace_dual_write_plan_payload(workspace_write_records, dual_write_artifact_keys=workspace_dual_write_artifact_keys)
         dual_write_plan_path = _write_workspace_json(base_dir, "workspace_dual_write_plan", dual_write_plan, workspace_resolver, workspace_write_records)
         artifact_index["workspace"]["dual_write_plan"] = str(dual_write_plan_path)
         artifact_index["workspace_dual_write"] = dual_write_plan
+    if browser_provider_smoke_path is not None:
+        artifact_index["workspace"]["browser_provider_smoke"] = str(browser_provider_smoke_path)
+        artifact_index["browser_provider_smoke"] = browser_provider_smoke_attachment
+        artifact_index["browser_provider_smoke_acceptance"] = browser_provider_smoke_acceptance
     _write_json(index_path, artifact_index)
     return output_paths
 
@@ -376,7 +397,7 @@ def write_platform_outputs(
         "backend_artifact_manifest": str(manifest_path),
     }
     if enable_workspace_dual_write:
-        dual_write_plan = _workspace_dual_write_plan_payload(workspace_write_records)
+        dual_write_plan = _workspace_dual_write_plan_payload(workspace_write_records, dual_write_artifact_keys=workspace_dual_write_artifact_keys)
         dual_write_plan_path = _write_workspace_json(base_dir, "workspace_dual_write_plan", dual_write_plan, workspace_resolver, workspace_write_records)
         artifact_index["workspace"]["dual_write_plan"] = str(dual_write_plan_path)
         artifact_index["workspace_dual_write"] = dual_write_plan
@@ -522,8 +543,9 @@ def run_reverse_pipeline(
     keep_chrome: bool = False,
     mcp_command: str | None = None,
     runtime: WebReverseRuntime | None = None,
+    browser_provider_smoke: dict[str, Any] | None = None,
     enable_workspace_dual_write: bool = False,
-    **runtime_kwargs: Any,
+    workspace_dual_write_artifact_keys: set[str] | None = None,    **runtime_kwargs: Any,
 ) -> ReversePipelineOutput:
     """Run the deterministic reverse coordinator pipeline.
 
@@ -580,6 +602,7 @@ def run_reverse_pipeline(
         export_bundle,
         runtime_capabilities=runtime_capabilities,
         enable_workspace_dual_write=enable_workspace_dual_write,
+        workspace_dual_write_artifact_keys=workspace_dual_write_artifact_keys,        browser_provider_smoke=browser_provider_smoke,
     )
     return ReversePipelineOutput(
         final_result=final_result,
@@ -625,6 +648,8 @@ def _write_workspace_json(
             "virtual_uri": resolution.virtual_uri,
             "write_paths": written_paths,
             "dual_write_enabled": resolution.dual_write_enabled,
+            "dual_write_scope_enabled": resolution.dual_write_scope_enabled,
+            "dual_write_in_scope": resolution.dual_write_in_scope,
             "physical_migration_enabled": resolution.physical_migration_enabled,
             "canonical_path_remains_authoritative": resolution.canonical_path_remains_authoritative,
             "migration_status": resolution.migration_status,
@@ -643,16 +668,21 @@ def _workspace_filesystem_path(base_dir: Path, workspace_path: str) -> Path:
     return base_dir / "workspace" / workspace_path
 
 
-def _workspace_dual_write_plan_payload(write_records: list[dict[str, Any]]) -> dict[str, Any]:
+def _workspace_dual_write_plan_payload(write_records: list[dict[str, Any]], dual_write_artifact_keys: set[str] | None = None) -> dict[str, Any]:
     dual_written = [record for record in write_records if record.get("dual_write_enabled")]
+    out_of_scope = [record for record in write_records if not record.get("dual_write_in_scope", True)]
+    scoped = dual_write_artifact_keys is not None
     return {
         "schema_version": "reverse-deepagent.workspace-dual-write-plan.v1",
         "status": "applied" if dual_written else "not-enabled",
-        "mode": "opt-in-dual-write",
+        "mode": "scoped-opt-in-dual-write" if scoped else "opt-in-dual-write",
+        "dual_write_scope_enabled": scoped,
+        "dual_write_scope_artifact_keys": sorted(dual_write_artifact_keys) if scoped else None,
         "canonical_path_remains_authoritative": True,
         "physical_migration_enabled": False,
         "record_count": len(write_records),
         "dual_written_count": len(dual_written),
+        "out_of_scope_record_count": len(out_of_scope),
         "records": write_records,
     }
 
@@ -741,6 +771,340 @@ def _extract_workspace_artifact_payloads(final_result: FinalResult) -> dict[str,
             payloads["source-logpoint-timeline.json"] = evidence.details
         elif evidence.source == "breakpoint_manager":
             payloads["breakpoints.json"] = evidence.details
+        elif evidence.source == "async_chunk_load_plan":
+            payloads["async-chunk-load-plan.json"] = evidence.details
+        elif evidence.source == "async_chunk_load_result":
+            payloads["async-chunk-load-result.json"] = evidence.details
+        elif evidence.source == "async_chunk_module_diff":
+            payloads["async-chunk-module-diff.json"] = evidence.details
+        elif evidence.source == "async_chunk_recursive_traversal_execution":
+            payloads["async-chunk-recursive-traversal-execution.json"] = evidence.details
+        elif evidence.source == "async_chunk_recursive_traversal_followup":
+            payloads["async-chunk-recursive-traversal-followup.json"] = evidence.details
+        elif evidence.source == "async_chunk_recursive_traversal_plan":
+            payloads["async-chunk-recursive-traversal-plan.json"] = evidence.details
+        elif evidence.source == "async_chunk_traversal_graph":
+            payloads["async-chunk-traversal-graph.json"] = evidence.details
+        elif evidence.source == "async_chunk_traversal_loop_execution":
+            payloads["async-chunk-traversal-loop-execution.json"] = evidence.details
+        elif evidence.source == "async_chunk_traversal_loop_plan":
+            payloads["async-chunk-traversal-loop-plan.json"] = evidence.details
+        elif evidence.source == "async_chunk_traversal_workflow_execution":
+            payloads["async-chunk-traversal-workflow-execution.json"] = evidence.details
+        elif evidence.source == "async_chunk_traversal_workflow_plan":
+            payloads["async-chunk-traversal-workflow-plan.json"] = evidence.details
+        elif evidence.source == "bundler_symbol_scope":
+            payloads["bundler-symbol-scope.json"] = evidence.details
+        elif evidence.source == "closure_function_candidates":
+            payloads["closure-function-candidates.json"] = evidence.details
+        elif evidence.source == "closure_functions":
+            payloads["closure-functions.json"] = evidence.details
+        elif evidence.source == "closure_wrapper_assignment_safety":
+            payloads["closure-wrapper-assignment-safety.json"] = evidence.details
+        elif evidence.source == "closure_wrapper_continuation_checkpoint":
+            payloads["closure-wrapper-continuation-checkpoint.json"] = evidence.details
+        elif evidence.source == "closure_wrapper_continuation_execution":
+            payloads["closure-wrapper-continuation-execution.json"] = evidence.details
+        elif evidence.source == "closure_wrapper_continuation_execution_plan":
+            payloads["closure-wrapper-continuation-execution-plan.json"] = evidence.details
+        elif evidence.source == "closure_wrapper_continuation_next_iteration_execution":
+            payloads["closure-wrapper-continuation-next-iteration-execution.json"] = evidence.details
+        elif evidence.source == "closure_wrapper_continuation_next_iteration_plan":
+            payloads["closure-wrapper-continuation-next-iteration-plan.json"] = evidence.details
+        elif evidence.source == "closure_wrapper_continuation_readiness":
+            payloads["closure-wrapper-continuation-readiness.json"] = evidence.details
+        elif evidence.source == "closure_wrapper_events":
+            payloads["closure-wrapper-events.json"] = evidence.details
+        elif evidence.source == "closure_wrapper_replacement_execution":
+            payloads["closure-wrapper-replacement-execution.json"] = evidence.details
+        elif evidence.source == "closure_wrapper_replacement_plan":
+            payloads["closure-wrapper-replacement-plan.json"] = evidence.details
+        elif evidence.source == "closure_wrapper_restore_execution":
+            payloads["closure-wrapper-restore-execution.json"] = evidence.details
+        elif evidence.source == "closure_wrapper_restore_plan":
+            payloads["closure-wrapper-restore-plan.json"] = evidence.details
+        elif evidence.source == "closure_wrapper_runtime_mutability_preflight":
+            payloads["closure-wrapper-runtime-mutability-preflight.json"] = evidence.details
+        elif evidence.source == "closure_wrapper_runtime_mutability_result":
+            payloads["closure-wrapper-runtime-mutability-result.json"] = evidence.details
+        elif evidence.source == "custom_loader_continuation_execution":
+            payloads["custom-loader-continuation-execution.json"] = evidence.details
+        elif evidence.source == "custom_loader_continuation_journal":
+            payloads["custom-loader-continuation-journal.json"] = evidence.details
+        elif evidence.source == "custom_loader_continuation_workflow":
+            payloads["custom-loader-continuation-workflow.json"] = evidence.details
+        elif evidence.source == "custom_loader_execution_preflight":
+            payloads["custom-loader-execution-preflight.json"] = evidence.details
+        elif evidence.source == "custom_loader_execution_result":
+            payloads["custom-loader-execution-result.json"] = evidence.details
+        elif evidence.source == "custom_loader_module_diff":
+            payloads["custom-loader-module-diff.json"] = evidence.details
+        elif evidence.source == "custom_loader_recursive_traversal_execution":
+            payloads["custom-loader-recursive-traversal-execution.json"] = evidence.details
+        elif evidence.source == "custom_loader_recursive_traversal_followup":
+            payloads["custom-loader-recursive-traversal-followup.json"] = evidence.details
+        elif evidence.source == "custom_loader_recursive_traversal_plan":
+            payloads["custom-loader-recursive-traversal-plan.json"] = evidence.details
+        elif evidence.source == "custom_loader_traversal_graph":
+            payloads["custom-loader-traversal-graph.json"] = evidence.details
+        elif evidence.source == "custom_loader_traversal_loop_execution":
+            payloads["custom-loader-traversal-loop-execution.json"] = evidence.details
+        elif evidence.source == "custom_loader_traversal_loop_plan":
+            payloads["custom-loader-traversal-loop-plan.json"] = evidence.details
+        elif evidence.source == "custom_loader_traversal_plan":
+            payloads["custom-loader-traversal-plan.json"] = evidence.details
+        elif evidence.source == "custom_loader_traversal_workflow_execution":
+            payloads["custom-loader-traversal-workflow-execution.json"] = evidence.details
+        elif evidence.source == "custom_loader_traversal_workflow_plan":
+            payloads["custom-loader-traversal-workflow-plan.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_automatic_followup_plan":
+            payloads["heap-snapshot-automatic-followup-plan.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_collect":
+            payloads["heap-snapshot-collect.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_constructor_growth_drilldown":
+            payloads["heap-snapshot-constructor-growth-drilldown.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_constructor_growth_drilldown_analysis":
+            payloads["heap-snapshot-constructor-growth-drilldown-analysis.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_diff_executor_approval_plan":
+            payloads["heap-snapshot-diff-executor-approval-plan.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_diff_executor_approval_record":
+            payloads["heap-snapshot-diff-executor-approval-record.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_diff_executor_bounded_gate":
+            payloads["heap-snapshot-diff-executor-bounded-gate.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_diff_executor_preflight":
+            payloads["heap-snapshot-diff-executor-preflight.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_diff_executor_result":
+            payloads["heap-snapshot-diff-executor-result.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_diff_executor_transaction_journal":
+            payloads["heap-snapshot-diff-executor-journal.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_diff_executor_transaction_preflight":
+            payloads["heap-snapshot-diff-executor-transaction-preflight.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_diff_followup_checkpoint":
+            payloads["heap-snapshot-diff-followup-checkpoint.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_diff_readiness":
+            payloads["heap-snapshot-diff-readiness.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_diff_selected_analysis_input_preflight":
+            payloads["heap-snapshot-diff-selected-analysis-input-preflight.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_path_to_root_analysis":
+            payloads["heap-snapshot-path-to-root-analysis.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_path_to_root_proof_plan":
+            payloads["heap-snapshot-path-to-root-proof-plan.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_raw_heap_constructor_drilldown_proof_plan":
+            payloads["heap-snapshot-raw-heap-constructor-drilldown-proof-plan.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_readiness":
+            payloads["heap-snapshot-readiness.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_retained_path_preflight":
+            payloads["heap-snapshot-retained-path-preflight.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_retained_size_analysis":
+            payloads["heap-snapshot-retained-size-analysis.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_retained_size_approval_plan":
+            payloads["heap-snapshot-retained-size-approval-plan.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_retained_size_approval_record":
+            payloads["heap-snapshot-retained-size-approval-record.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_retained_size_bounded_gate":
+            payloads["heap-snapshot-retained-size-bounded-gate.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_retained_size_input_review":
+            payloads["heap-snapshot-retained-size-input-review.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_retained_size_proof_plan":
+            payloads["heap-snapshot-retained-size-proof-plan.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_retained_size_transaction_journal":
+            payloads["heap-snapshot-retained-size-executor-journal.json"] = evidence.details
+        elif evidence.source == "heap_snapshot_retained_size_transaction_preflight":
+            payloads["heap-snapshot-retained-size-transaction-preflight.json"] = evidence.details
+        elif evidence.source == "module_federation_export_hook_plan":
+            payloads["module-federation-export-hook-plan.json"] = evidence.details
+        elif evidence.source == "module_federation_factory_invoke_result":
+            payloads["module-federation-factory-invoke-result.json"] = evidence.details
+        elif evidence.source == "module_federation_get_init_plan":
+            payloads["module-federation-get-init-plan.json"] = evidence.details
+        elif evidence.source == "module_federation_get_init_result":
+            payloads["module-federation-get-init-result.json"] = evidence.details
+        elif evidence.source == "module_federation_recursive_continuation_checkpoint":
+            payloads["module-federation-recursive-continuation-checkpoint.json"] = evidence.details
+        elif evidence.source == "module_federation_recursive_continuation_journal":
+            payloads["module-federation-recursive-continuation-journal.json"] = evidence.details
+        elif evidence.source == "module_federation_recursive_traversal_execution":
+            payloads["module-federation-recursive-traversal-execution.json"] = evidence.details
+        elif evidence.source == "module_federation_recursive_traversal_followup":
+            payloads["module-federation-recursive-traversal-followup.json"] = evidence.details
+        elif evidence.source == "module_federation_recursive_traversal_plan":
+            payloads["module-federation-recursive-traversal-plan.json"] = evidence.details
+        elif evidence.source == "module_federation_traversal_graph":
+            payloads["module-federation-traversal-graph.json"] = evidence.details
+        elif evidence.source == "module_federation_traversal_workflow_execution":
+            payloads["module-federation-traversal-workflow-execution.json"] = evidence.details
+        elif evidence.source == "module_federation_traversal_workflow_plan":
+            payloads["module-federation-traversal-workflow-plan.json"] = evidence.details
+        elif evidence.source == "object_graph_diff":
+            payloads["object-graph-diff.json"] = evidence.details
+        elif evidence.source == "object_root_mutation_audit":
+            payloads["object-root-mutation-audit.json"] = evidence.details
+        elif evidence.source == "paused_session_automatic_loop_bounded_executor_gate":
+            payloads["paused-session-automatic-loop-bounded-executor-gate.json"] = evidence.details
+        elif evidence.source == "paused_session_automatic_loop_execution_plan":
+            payloads["paused-session-automatic-loop-execution-plan.json"] = evidence.details
+        elif evidence.source == "paused_session_automatic_loop_execution_result":
+            payloads["paused-session-automatic-loop-execution-result.json"] = evidence.details
+        elif evidence.source == "paused_session_automatic_loop_executor_approval_plan":
+            payloads["paused-session-automatic-loop-executor-approval-plan.json"] = evidence.details
+        elif evidence.source == "paused_session_automatic_loop_executor_approval_record":
+            payloads["paused-session-automatic-loop-executor-approval-record.json"] = evidence.details
+        elif evidence.source == "paused_session_automatic_loop_executor_journal":
+            payloads["paused-session-automatic-loop-executor-journal.json"] = evidence.details
+        elif evidence.source == "paused_session_automatic_loop_executor_preflight":
+            payloads["paused-session-automatic-loop-executor-preflight.json"] = evidence.details
+        elif evidence.source == "paused_session_automatic_loop_following_iteration_plan":
+            payloads["paused-session-automatic-loop-following-iteration-plan.json"] = evidence.details
+        elif evidence.source == "paused_session_automatic_loop_followup_checkpoint":
+            payloads["paused-session-automatic-loop-followup-checkpoint.json"] = evidence.details
+        elif evidence.source == "paused_session_automatic_loop_multi_iteration_bounded_executor_gate":
+            payloads["paused-session-automatic-loop-multi-iteration-bounded-executor-gate.json"] = evidence.details
+        elif evidence.source == "paused_session_automatic_loop_multi_iteration_execution_plan":
+            payloads["paused-session-automatic-loop-multi-iteration-execution-plan.json"] = evidence.details
+        elif evidence.source == "paused_session_automatic_loop_multi_iteration_execution_result":
+            payloads["paused-session-automatic-loop-multi-iteration-execution-result.json"] = evidence.details
+        elif evidence.source == "paused_session_automatic_loop_multi_iteration_executor_approval_plan":
+            payloads["paused-session-automatic-loop-multi-iteration-executor-approval-plan.json"] = evidence.details
+        elif evidence.source == "paused_session_automatic_loop_multi_iteration_executor_approval_record":
+            payloads["paused-session-automatic-loop-multi-iteration-executor-approval-record.json"] = evidence.details
+        elif evidence.source == "paused_session_automatic_loop_multi_iteration_executor_input_preflight":
+            payloads["paused-session-automatic-loop-multi-iteration-executor-input-preflight.json"] = evidence.details
+        elif evidence.source == "paused_session_automatic_loop_multi_iteration_executor_preflight":
+            payloads["paused-session-automatic-loop-multi-iteration-executor-preflight.json"] = evidence.details
+        elif evidence.source == "paused_session_automatic_loop_multi_iteration_followup_checkpoint":
+            payloads["paused-session-automatic-loop-multi-iteration-followup-checkpoint.json"] = evidence.details
+        elif evidence.source == "paused_session_automatic_loop_multi_iteration_next_step_plan":
+            payloads["paused-session-automatic-loop-multi-iteration-next-step-plan.json"] = evidence.details
+        elif evidence.source == "paused_session_automatic_loop_multi_iteration_policy":
+            payloads["paused-session-automatic-loop-multi-iteration-policy.json"] = evidence.details
+        elif evidence.source == "paused_session_automatic_loop_multi_iteration_transaction_journal":
+            payloads["paused-session-automatic-loop-multi-iteration-executor-journal.json"] = evidence.details
+        elif evidence.source == "paused_session_automatic_loop_multi_iteration_transaction_preflight":
+            payloads["paused-session-automatic-loop-multi-iteration-transaction-preflight.json"] = evidence.details
+        elif evidence.source == "paused_session_automatic_loop_next_iteration_execution":
+            payloads["paused-session-automatic-loop-next-iteration-execution.json"] = evidence.details
+        elif evidence.source == "paused_session_automatic_loop_next_iteration_followup_checkpoint":
+            payloads["paused-session-automatic-loop-next-iteration-followup-checkpoint.json"] = evidence.details
+        elif evidence.source == "paused_session_automatic_loop_next_iteration_plan":
+            payloads["paused-session-automatic-loop-next-iteration-plan.json"] = evidence.details
+        elif evidence.source == "paused_session_automatic_loop_readiness":
+            payloads["paused-session-automatic-loop-readiness.json"] = evidence.details
+        elif evidence.source == "paused_session_automatic_loop_transaction_preflight":
+            payloads["paused-session-automatic-loop-transaction-preflight.json"] = evidence.details
+        elif evidence.source == "paused_session_cross_process_attach_probe":
+            payloads["paused-session-cross-process-attach-probe.json"] = evidence.details
+        elif evidence.source == "paused_session_cross_process_continuation_checkpoint":
+            payloads["paused-session-cross-process-continuation-checkpoint.json"] = evidence.details
+        elif evidence.source == "paused_session_cross_process_execution_plan":
+            payloads["paused-session-cross-process-execution-plan.json"] = evidence.details
+        elif evidence.source == "paused_session_cross_process_one_action_execution":
+            payloads["paused-session-cross-process-one-action-execution.json"] = evidence.details
+        elif evidence.source == "paused_session_cross_process_session_lifecycle":
+            payloads["paused-session-cross-process-session-lifecycle.json"] = evidence.details
+        elif evidence.source == "paused_session_live_callframe_recovery":
+            payloads["paused-session-live-callframe-recovery.json"] = evidence.details
+        elif evidence.source == "paused_session_multi_step_continuation_execution":
+            payloads["paused-session-multi-step-continuation-execution.json"] = evidence.details
+        elif evidence.source == "paused_session_multi_step_continuation_workflow":
+            payloads["paused-session-multi-step-continuation-workflow.json"] = evidence.details
+        elif evidence.source == "paused_session_multi_step_loop_execution":
+            payloads["paused-session-multi-step-loop-execution.json"] = evidence.details
+        elif evidence.source == "paused_session_multi_step_loop_plan":
+            payloads["paused-session-multi-step-loop-plan.json"] = evidence.details
+        elif evidence.source == "paused_session_next_paused_event_capture_execution":
+            payloads["paused-session-next-paused-event-capture-execution.json"] = evidence.details
+        elif evidence.source == "paused_session_next_paused_event_capture_plan":
+            payloads["paused-session-next-paused-event-capture-plan.json"] = evidence.details
+        elif evidence.source == "paused_session_pre_action_subscribe_and_action":
+            payloads["paused-session-pre-action-subscribe-and-action.json"] = evidence.details
+        elif evidence.source == "paused_session_target_attach_readiness":
+            payloads["paused-session-target-attach-readiness.json"] = evidence.details
+        elif evidence.source == "recursive_continuation_readiness":
+            payloads["recursive-continuation-readiness.json"] = evidence.details
+        elif evidence.source == "runtime_object_graph_diff":
+            payloads["runtime-object-graph-diff.json"] = evidence.details
+        elif evidence.source == "source_map_consumer_action_plan":
+            payloads["source-map-consumer-action-plan.json"] = evidence.details
+        elif evidence.source == "source_map_consumer_materialization":
+            payloads["source-map-consumer-materialization.json"] = evidence.details
+        elif evidence.source == "source_map_debugger_candidate_selection":
+            payloads["source-map-debugger-candidate-selection.json"] = evidence.details
+        elif evidence.source == "source_map_debugger_candidates":
+            payloads["source-map-debugger-candidates.json"] = evidence.details
+        elif evidence.source == "source_map_debugger_execution_result":
+            payloads["source-map-debugger-execution-result.json"] = evidence.details
+        elif evidence.source == "source_map_fetch_plan":
+            payloads["source-map-fetch-plan.json"] = evidence.details
+        elif evidence.source == "source_map_fetch_result":
+            payloads["source-map-fetch-result.json"] = evidence.details
+        elif evidence.source == "source_map_followthrough_chain_readiness":
+            payloads["source-map-followthrough-chain-readiness.json"] = evidence.details
+        elif evidence.source == "source_map_followthrough_completion_checkpoint":
+            payloads["source-map-followthrough-completion-checkpoint.json"] = evidence.details
+        elif evidence.source == "source_map_followthrough_dispatch_approval_plan":
+            payloads["source-map-followthrough-dispatch-approval-plan.json"] = evidence.details
+        elif evidence.source == "source_map_followthrough_dispatch_approval_record":
+            payloads["source-map-followthrough-dispatch-approval-record.json"] = evidence.details
+        elif evidence.source == "source_map_followthrough_dispatch_bounded_executor_gate":
+            payloads["source-map-followthrough-dispatch-bounded-executor-gate.json"] = evidence.details
+        elif evidence.source == "source_map_followthrough_dispatch_preflight":
+            payloads["source-map-followthrough-dispatch-preflight.json"] = evidence.details
+        elif evidence.source == "source_map_followthrough_dispatch_transaction_journal":
+            payloads["source-map-followthrough-dispatch-transaction-journal.json"] = evidence.details
+        elif evidence.source == "source_map_followthrough_dispatch_transaction_preflight":
+            payloads["source-map-followthrough-dispatch-transaction-preflight.json"] = evidence.details
+        elif evidence.source == "source_map_followthrough_dispatcher_apply_preflight":
+            payloads["source-map-followthrough-dispatcher-apply-preflight.json"] = evidence.details
+        elif evidence.source == "source_map_followthrough_dispatcher_handoff":
+            payloads["source-map-followthrough-dispatcher-handoff.json"] = evidence.details
+        elif evidence.source == "source_map_followthrough_dispatcher_result":
+            payloads["source-map-followthrough-dispatcher-result.json"] = evidence.details
+        elif evidence.source == "source_map_followthrough_one_step_plan":
+            payloads["source-map-followthrough-one-step-plan.json"] = evidence.details
+        elif evidence.source == "source_map_followthrough_review":
+            payloads["source-map-followthrough-review.json"] = evidence.details
+        elif evidence.source == "source_map_followthrough_surface_selection":
+            payloads["source-map-followthrough-surface-selection.json"] = evidence.details
+        elif evidence.source == "source_map_hook_candidate_selection":
+            payloads["source-map-hook-candidate-selection.json"] = evidence.details
+        elif evidence.source == "source_map_hook_candidates":
+            payloads["source-map-hook-candidates.json"] = evidence.details
+        elif evidence.source == "source_map_hook_install_result":
+            payloads["source-map-hook-install-result.json"] = evidence.details
+        elif evidence.source == "source_map_lookup":
+            payloads["source-map-lookup.json"] = evidence.details
+        elif evidence.source == "source_map_readiness":
+            payloads["source-map-readiness.json"] = evidence.details
+        elif evidence.source == "source_map_rebuild_generation_result":
+            payloads["source-map-rebuild-generation-result.json"] = evidence.details
+        elif evidence.source == "source_map_rebuild_result":
+            payloads["source-map-rebuild-result.json"] = evidence.details
+        elif evidence.source == "source_map_selected_executor_application_handoff":
+            payloads["source-map-selected-executor-application-handoff.json"] = evidence.details
+        elif evidence.source == "source_map_selected_executor_apply_preflight":
+            payloads["source-map-selected-executor-apply-preflight.json"] = evidence.details
+        elif evidence.source == "source_map_selected_executor_approval_plan":
+            payloads["source-map-selected-executor-approval-plan.json"] = evidence.details
+        elif evidence.source == "source_map_selected_executor_approval_record":
+            payloads["source-map-selected-executor-approval-record.json"] = evidence.details
+        elif evidence.source == "source_map_selected_executor_input_review":
+            payloads["source-map-selected-executor-input-review.json"] = evidence.details
+        elif evidence.source == "source_map_selected_executor_result_checkpoint":
+            payloads["source-map-selected-executor-result-checkpoint.json"] = evidence.details
+        elif evidence.source == "source_map_source_content":
+            payloads["source-map-source-content.json"] = evidence.details
+        elif evidence.source == "source_map_source_logpoint_install_result":
+            payloads["source-map-source-logpoint-install-result.json"] = evidence.details
+        elif evidence.source == "source_map_terminal_review_closure_checkpoint":
+            payloads["source-map-terminal-review-closure-checkpoint.json"] = evidence.details
+        elif evidence.source == "source_map_terminal_review_final_audit":
+            payloads["source-map-terminal-review-final-audit.json"] = evidence.details
+        elif evidence.source == "source_map_terminal_review_package":
+            payloads["source-map-terminal-review-package.json"] = evidence.details
+        elif evidence.source == "source_map_typed_payload_preflight":
+            payloads["source-map-typed-payload-preflight.json"] = evidence.details
+        elif evidence.source == "paused_session_live_continuation_preflight":
+            payloads["paused-session-live-continuation-preflight.json"] = evidence.details
         elif evidence.source == "debugger_paused":
             payloads["debugger-paused.json"] = evidence.details
         elif evidence.source == "debugger_callframes":
@@ -773,6 +1137,13 @@ def _extract_workspace_artifact_payloads(final_result: FinalResult) -> dict[str,
             payloads["function-validation-summary.json"] = evidence.details
     return payloads
 
+
+
+def _browser_provider_smoke_acceptance(smoke_payload: dict[str, Any], capabilities: RuntimeBackendCapabilities) -> dict[str, Any]:
+    """Review existing BrowserProvider smoke JSON before attaching it to Web artifacts."""
+    provider = capabilities.config.get("provider") if isinstance(capabilities.config, dict) else None
+    expected_provider_id = str(provider.get("provider_id") or "") if isinstance(provider, dict) else ""
+    return _browser_smoke_impl(smoke_payload, expected_provider_id=expected_provider_id)
 
 def _final_from_recon(task_card: TaskCard, route_result: RouterResult, recon_result: ReconResult) -> FinalResult:
     return FinalResult(
