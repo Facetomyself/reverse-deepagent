@@ -6,6 +6,24 @@ from importlib import metadata as importlib_metadata
 from typing import Any, Callable
 
 from reverse_deepagent.runtime.base import ReverseRuntime, RuntimeBackendCapabilities
+from reverse_deepagent.runtime.factories import (
+    _android_adb_runtime_factory,
+    _browser_cli_runtime_factory,
+    _chrome_cdp_runtime_factory,
+    _ios_simulator_runtime_factory,
+    _mini_program_devtools_runtime_factory,
+    _mock_runtime_factory,
+    _native_web_runtime_factory,
+    _playwright_cli_runtime_factory,
+    _remote_cdp_provider_runtime_factory,
+)
+from reverse_deepagent.runtime.legacy_mcp import (
+    LEGACY_MCP_BACKEND_ID,
+    LegacyMcpPluginUnavailableError,
+    is_legacy_mcp_runtime_kind,
+    legacy_mcp_install_guidance,
+    legacy_mcp_backend_registration,
+)
 
 RuntimeBackendFactory = Callable[..., ReverseRuntime]
 RUNTIME_BACKEND_ENTRY_POINT_GROUP = "reverse_deepagent.runtime_backends"
@@ -127,3 +145,291 @@ def _entry_points_for_group(group: str) -> list[Any]:
     else:  # pragma: no cover - compatibility with older importlib.metadata APIs
         selected = entry_points.get(group, [])
     return list(selected)
+
+
+def build_default_runtime_registry(*, include_entry_points: bool = True, include_legacy_mcp: bool = True) -> RuntimeBackendRegistry:
+    """Build the default runtime backend registry without starting external processes."""
+
+    registry = RuntimeBackendRegistry()
+    registry.register(
+        RuntimeBackendRegistration(
+            backend_id="mock",
+            aliases=("in-process",),
+            factory=_mock_runtime_factory,
+            capabilities=RuntimeBackendCapabilities(
+                backend_id="mock",
+                display_name="Mock JSReverser Runtime",
+                transport="in-process",
+                target_platforms=["web"],
+                supports_browser_session=True,
+                supports_web_recon=True,
+                supports_protection_patch=True,
+                supports_artifact_export=True,
+                supports_runtime_context=True,
+                supports_replay_validation=True,
+                evidence_kinds=["request", "callstack", "static", "dynamic", "storage", "note"],
+                artifact_kinds=["json", "export", "rebuild", "markdown"],
+                notes=["deterministic in-process backend for tests and public CI"],
+            ),
+        )
+    )
+    registry.register(
+        RuntimeBackendRegistration(
+            backend_id="native-web",
+            aliases=("web", "browser-native"),
+            factory=_native_web_runtime_factory,
+            capabilities=RuntimeBackendCapabilities(
+                backend_id="native-web",
+                display_name="Native Web Runtime",
+                transport="browser-provider",
+                target_platforms=["web"],
+                supports_browser_session=True,
+                supports_web_recon=True,
+                supports_protection_patch=True,
+                supports_artifact_export=True,
+                supports_runtime_context=True,
+                supports_replay_validation=True,
+                managed_chrome=False,
+                mcp_backed=False,
+                evidence_kinds=["request", "static", "dynamic", "storage", "screenshot", "note"],
+                artifact_kinds=["json", "markdown", "screenshot"],
+                notes=[
+                    "native BrowserProvider-backed Web runtime",
+                    "does not require jsreverser-mcp",
+                    "default provider is playwright-chromium",
+                ],
+                config={"default_browser_provider": "playwright-chromium"},
+            ),
+        )
+    )
+
+    registry.register(
+        RuntimeBackendRegistration(
+            backend_id="remote-cdp",
+            aliases=("cdp-provider", "chrome-cdp-provider"),
+            factory=_remote_cdp_provider_runtime_factory,
+            capabilities=RuntimeBackendCapabilities(
+                backend_id="remote-cdp",
+                display_name="Remote Chrome CDP BrowserProvider",
+                transport="remote-cdp",
+                target_platforms=["web"],
+                supports_browser_session=True,
+                supports_web_recon=True,
+                supports_protection_patch=True,
+                supports_artifact_export=True,
+                supports_runtime_context=True,
+                supports_replay_validation=True,
+                managed_chrome=False,
+                mcp_backed=False,
+                evidence_kinds=["request", "static", "dynamic", "storage", "screenshot", "note"],
+                artifact_kinds=["json", "markdown", "screenshot"],
+                notes=[
+                    "connects to an already-running Chrome DevTools endpoint",
+                    "useful as a smoke path when Playwright is unavailable",
+                ],
+                config={"default_browser_url": "http://127.0.0.1:9222"},
+            ),
+        )
+    )
+
+    registry.register(
+        RuntimeBackendRegistration(
+            backend_id="playwright-cli",
+            aliases=("playwright", "pw-cli"),
+            factory=_playwright_cli_runtime_factory,
+            capabilities=RuntimeBackendCapabilities(
+                backend_id="playwright-cli",
+                display_name="Playwright CLI Runtime",
+                transport="playwright-cli",
+                target_platforms=["web"],
+                supports_browser_session=True,
+                supports_web_recon=True,
+                supports_protection_patch=False,
+                supports_artifact_export=True,
+                supports_runtime_context=False,
+                supports_replay_validation=False,
+                managed_chrome=False,
+                mcp_backed=False,
+                evidence_kinds=["static", "dynamic", "note"],
+                artifact_kinds=["json", "export", "source"],
+                notes=[
+                    "lightweight Web backend using side-effect-light Playwright CLI probes",
+                    "does not launch browsers or capture live network traffic",
+                ],
+                config={"default_command": "playwright --version"},
+            ),
+        )
+    )
+    registry.register(
+        RuntimeBackendRegistration(
+            backend_id="chrome-cdp",
+            aliases=("cdp", "devtools"),
+            factory=_chrome_cdp_runtime_factory,
+            capabilities=RuntimeBackendCapabilities(
+                backend_id="chrome-cdp",
+                display_name="Chrome CDP Runtime",
+                transport="chrome-cdp",
+                target_platforms=["web"],
+                supports_browser_session=True,
+                supports_web_recon=True,
+                supports_protection_patch=False,
+                supports_artifact_export=True,
+                supports_runtime_context=False,
+                supports_replay_validation=False,
+                managed_chrome=False,
+                mcp_backed=False,
+                evidence_kinds=["static", "dynamic", "note"],
+                artifact_kinds=["json", "export", "source", "session"],
+                notes=[
+                    "lightweight Web backend that probes an existing Chrome DevTools endpoint",
+                    "never starts Chrome; use managed Chrome launcher explicitly if needed",
+                ],
+                config={"default_browser_url": "http://127.0.0.1:9222"},
+            ),
+        )
+    )
+    registry.register(
+        RuntimeBackendRegistration(
+            backend_id="browser-cli",
+            aliases=("cli-browser", "browser-command"),
+            factory=_browser_cli_runtime_factory,
+            capabilities=RuntimeBackendCapabilities(
+                backend_id="browser-cli",
+                display_name="Generic Browser CLI Runtime",
+                transport="browser-cli",
+                target_platforms=["web"],
+                supports_browser_session=True,
+                supports_web_recon=True,
+                supports_protection_patch=False,
+                supports_artifact_export=True,
+                supports_runtime_context=False,
+                supports_replay_validation=False,
+                managed_chrome=False,
+                mcp_backed=False,
+                evidence_kinds=["static", "dynamic", "note"],
+                artifact_kinds=["json", "export", "source"],
+                notes=[
+                    "generic command-probed Web backend for portable CLI shims",
+                    "command is not configured by default and must be passed explicitly for a healthy session",
+                ],
+                config={"default_command": None},
+            ),
+        )
+    )
+
+    registry.register(
+        RuntimeBackendRegistration(
+            backend_id="android-adb",
+            aliases=("adb", "android-device"),
+            factory=_android_adb_runtime_factory,
+            capabilities=RuntimeBackendCapabilities(
+                backend_id="android-adb",
+                display_name="Android ADB Runtime",
+                transport="adb",
+                target_platforms=["android"],
+                supports_browser_session=False,
+                supports_web_recon=False,
+                supports_protection_patch=True,
+                supports_artifact_export=True,
+                supports_runtime_context=True,
+                supports_replay_validation=False,
+                evidence_kinds=["static", "dynamic", "storage", "network", "note"],
+                artifact_kinds=["json", "export", "runtime-context", "trace", "static-analysis"],
+                notes=["requires local adb for explicit probes; registry listing is side-effect free"],
+                config={"default_command": "adb", "requires_device": True},
+            ),
+        )
+    )
+    registry.register(
+        RuntimeBackendRegistration(
+            backend_id="ios-simulator",
+            aliases=("simctl", "ios-sim"),
+            factory=_ios_simulator_runtime_factory,
+            capabilities=RuntimeBackendCapabilities(
+                backend_id="ios-simulator",
+                display_name="iOS Simulator Runtime",
+                transport="xcrun-simctl",
+                target_platforms=["ios"],
+                supports_browser_session=False,
+                supports_web_recon=False,
+                supports_protection_patch=True,
+                supports_artifact_export=True,
+                supports_runtime_context=True,
+                supports_replay_validation=False,
+                evidence_kinds=["static", "dynamic", "storage", "network", "note"],
+                artifact_kinds=["json", "export", "runtime-context", "trace", "static-analysis"],
+                notes=["requires local xcrun/simctl for explicit probes; registry listing is side-effect free"],
+                config={"default_command": "xcrun simctl", "requires_simulator": True},
+            ),
+        )
+    )
+    registry.register(
+        RuntimeBackendRegistration(
+            backend_id="mini-program-devtools",
+            aliases=("mp-devtools", "wechat-devtools"),
+            factory=_mini_program_devtools_runtime_factory,
+            capabilities=RuntimeBackendCapabilities(
+                backend_id="mini-program-devtools",
+                display_name="Mini-program Developer Tools Runtime",
+                transport="vendor-devtools-cli",
+                target_platforms=["mini-program"],
+                supports_browser_session=False,
+                supports_web_recon=False,
+                supports_protection_patch=True,
+                supports_artifact_export=True,
+                supports_runtime_context=True,
+                supports_replay_validation=False,
+                evidence_kinds=["static", "dynamic", "hook", "storage", "network", "note"],
+                artifact_kinds=["json", "export", "runtime-context", "trace", "static-analysis", "package-metadata"],
+                notes=["requires configured vendor devtools CLI for explicit probes; registry listing is side-effect free"],
+                config={"vendor": "wechat", "requires_gui_tool": "depends-on-vendor"},
+            ),
+        )
+    )
+    if include_entry_points:
+        registry.load_entry_points()
+    if include_legacy_mcp and not registry.is_registered(LEGACY_MCP_BACKEND_ID):
+        try:
+            registry.register(legacy_mcp_backend_registration())
+        except LegacyMcpPluginUnavailableError:
+            # Core no longer ships a built-in legacy MCP fallback. The optional
+            # plugin is loaded through entry points when installed; otherwise
+            # runtime construction will surface structured install guidance.
+            pass
+    return registry
+
+
+DEFAULT_RUNTIME_BACKEND_REGISTRY = build_default_runtime_registry()
+
+
+def list_runtime_backends() -> list[dict[str, Any]]:
+    """Return JSON-serializable metadata for known runtime backends."""
+
+    return DEFAULT_RUNTIME_BACKEND_REGISTRY.list_metadata()
+
+
+def build_runtime(
+    runtime_kind: str,
+    browser_url: str | None = None,
+    mcp_command: str | None = None,
+    **runtime_kwargs: Any,
+) -> ReverseRuntime:
+    """Build a runtime backend by id or alias."""
+
+    try:
+        return DEFAULT_RUNTIME_BACKEND_REGISTRY.create(
+            runtime_kind,
+            browser_url=browser_url,
+            mcp_command=mcp_command,
+            **runtime_kwargs,
+        )
+    except ValueError as exc:
+        if is_legacy_mcp_runtime_kind(runtime_kind) and not DEFAULT_RUNTIME_BACKEND_REGISTRY.is_registered(runtime_kind):
+            guidance = legacy_mcp_install_guidance()
+            raise LegacyMcpPluginUnavailableError(
+                "Legacy MCP optional backend is not installed. "
+                f"runtime={runtime_kind!r}; package={guidance['package']!r}; "
+                f"install_hint={guidance['install_hint']!r}; "
+                f"preferred_web_runtime={guidance['preferred_web_runtime']!r}."
+            ) from exc
+        raise

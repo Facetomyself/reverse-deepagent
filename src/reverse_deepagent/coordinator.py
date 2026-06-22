@@ -2,38 +2,31 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from collections.abc import Iterable
 from typing import Any
 
 from pydantic import Field
 
-from reverse_deepagent.adapters.platforms import AndroidAdbRuntime, IosSimulatorRuntime, MiniProgramDevtoolsRuntime
-from reverse_deepagent.adapters.jsreverser import JSReverserRuntime
-from reverse_deepagent.adapters.lightweight_web import LightweightWebRuntimeConfig, create_lightweight_web_runtime
-from reverse_deepagent.adapters.native_web import create_native_web_runtime
 from reverse_deepagent.evidence import promote_evidence, promotion_workspace_payloads
 from reverse_deepagent.rebuild import write_rebuild_bundle
 from reverse_deepagent.review_gate import evaluate_review_gate, review_gate_workspace_payload
 from reverse_deepagent.runtime import (
     RuntimeBackendCapabilities,
-    RuntimeBackendRegistration,
-    RuntimeBackendRegistry,
     RuntimeExportBundle,
     ReverseRuntime,
     WebReverseRuntime,
 )
-from reverse_deepagent.runtime import RuntimeArtifactManifest, RuntimeArtifactManifestEntry
-from reverse_deepagent.runtime.browser_lifecycle import launch_browser_if_legacy_mcp, stop_browser_if_needed
-from reverse_deepagent.runtime.chrome import ChromeCommandResult, ChromeDebugConfig
+from reverse_deepagent.runtime.chrome import ChromeCommandResult, ChromeDebugConfig, ensure_chrome_debug, stop_chrome_debug
 from reverse_deepagent.runtime.legacy_mcp import (
-    LEGACY_MCP_BACKEND_ID,
-    LegacyMcpPluginUnavailableError,
     is_legacy_mcp_runtime_kind,
-    legacy_mcp_install_guidance,
     legacy_mcp_alias_warning as _legacy_mcp_alias_warning,
-    legacy_mcp_backend_registration,
 )
-from reverse_deepagent.runtime.mock_bridge import MockJSReverserBridge
+from reverse_deepagent.runtime.manifest import _build_backend_artifact_manifest
+from reverse_deepagent.runtime.registry import (
+    DEFAULT_RUNTIME_BACKEND_REGISTRY,
+    build_default_runtime_registry,
+    build_runtime,
+    list_runtime_backends,
+)
 from reverse_deepagent.schemas import (
     ArtifactKind,
     ArtifactRef,
@@ -50,8 +43,7 @@ from reverse_deepagent.schemas import (
     TaskCard,
 )
 from reverse_deepagent.tools.route_tools import normalize_task_card, route_from_task_card
-from reverse_deepagent.browser_provider_smoke_acceptance import browser_provider_smoke_acceptance
-from reverse_deepagent.workspace_contract import WorkspacePathResolver, workspace_contract_payload, workspace_manifest_alias_metadata
+from reverse_deepagent.workspace_contract import WorkspacePathResolver, workspace_contract_payload
 
 class ReversePipelineOutput(SchemaBaseModel):
     """Complete result returned by the deterministic coordinator pipeline."""
@@ -69,6 +61,10 @@ class PlatformPipelineOutput(SchemaBaseModel):
     artifacts: dict[str, str] = Field(default_factory=dict, description="Generated artifact path index.")
     runtime_capabilities: RuntimeBackendCapabilities = Field(description="Runtime backend capability snapshot used for routing.")
     runtime_export_bundle: RuntimeExportBundle = Field(description="Raw runtime export bundle emitted by the backend.")
+
+
+
+
 def build_markdown_report(final_result: FinalResult) -> str:
     """Build a human-readable Markdown report from a final result."""
 
@@ -101,407 +97,8 @@ def build_markdown_report(final_result: FinalResult) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _mock_runtime_factory(**_: Any) -> JSReverserRuntime:
-    return JSReverserRuntime(
-        bridge=MockJSReverserBridge(),
-        backend_id="mock",
-        display_name="Mock JSReverser Runtime",
-        transport="in-process",
-    )
 
 
-def _android_adb_runtime_factory(
-    *,
-    android_adb_command: str | None = None,
-    android_device_serial: str | None = None,
-    android_package_name: str | None = None,
-    **_: Any,
-) -> AndroidAdbRuntime:
-    return AndroidAdbRuntime(
-        adb_command=android_adb_command or "adb",
-        device_serial=android_device_serial,
-        package_name=android_package_name,
-    )
-
-
-def _ios_simulator_runtime_factory(
-    *,
-    ios_xcrun_command: str | None = None,
-    ios_device_id: str | None = None,
-    ios_bundle_id: str | None = None,
-    **_: Any,
-) -> IosSimulatorRuntime:
-    return IosSimulatorRuntime(
-        xcrun_command=ios_xcrun_command or "xcrun",
-        device_id=ios_device_id,
-        bundle_id=ios_bundle_id,
-    )
-
-
-def _mini_program_devtools_runtime_factory(
-    *,
-    mini_program_devtools_command: str | None = None,
-    mini_program_vendor: str | None = None,
-    mini_program_project_path: str | None = None,
-    **_: Any,
-) -> MiniProgramDevtoolsRuntime:
-    return MiniProgramDevtoolsRuntime(
-        devtools_command=mini_program_devtools_command,
-        vendor=mini_program_vendor or "wechat",
-        project_path=mini_program_project_path,
-    )
-
-
-def _playwright_cli_runtime_factory(
-    *,
-    playwright_command: str | None = None,
-    request_timeout: float | None = None,
-    **_: Any,
-) -> JSReverserRuntime:
-    config = LightweightWebRuntimeConfig(
-        backend_id="playwright-cli",
-        display_name="Playwright CLI Runtime",
-        transport="playwright-cli",
-        command=playwright_command or "playwright",
-        command_args=["--version"],
-        request_timeout=request_timeout or 10.0,
-    )
-    return create_lightweight_web_runtime(config=config)
-
-
-def _chrome_cdp_runtime_factory(
-    *,
-    browser_url: str | None = None,
-    cdp_browser_url: str | None = None,
-    request_timeout: float | None = None,
-    **_: Any,
-) -> JSReverserRuntime:
-    config = LightweightWebRuntimeConfig(
-        backend_id="chrome-cdp",
-        display_name="Chrome CDP Runtime",
-        transport="chrome-cdp",
-        browser_url=cdp_browser_url or browser_url or "http://127.0.0.1:9222",
-        request_timeout=request_timeout or 10.0,
-    )
-    return create_lightweight_web_runtime(config=config)
-
-
-def _browser_cli_runtime_factory(
-    *,
-    browser_cli_command: str | None = None,
-    request_timeout: float | None = None,
-    **_: Any,
-) -> JSReverserRuntime:
-    config = LightweightWebRuntimeConfig(
-        backend_id="browser-cli",
-        display_name="Generic Browser CLI Runtime",
-        transport="browser-cli",
-        command=browser_cli_command,
-        command_args=["--version"] if browser_cli_command else [],
-        request_timeout=request_timeout or 10.0,
-    )
-    return create_lightweight_web_runtime(config=config)
-
-
-def _native_web_runtime_factory(
-    *,
-    browser: str | None = None,
-    browser_provider: str | None = None,
-    browser_headless: bool | None = None,
-    browser_profile_dir: str | None = None,
-    browser_executable_path: str | None = None,
-    browser_args: list[str] | None = None,
-    browser_url: str | None = None,
-    cdp_browser_url: str | None = None,
-    browser_humanize: bool | None = None,
-    browser_proxy: str | None = None,
-    browser_geoip: bool | None = None,
-    browser_locale: str | None = None,
-    browser_timezone: str | None = None,
-    request_timeout: float | None = None,
-    **_: Any,
-):
-    return create_native_web_runtime(
-        browser=browser or browser_provider,
-        browser_headless=True if browser_headless is None else browser_headless,
-        browser_profile_dir=browser_profile_dir,
-        browser_executable_path=browser_executable_path,
-        browser_args=browser_args or [],
-        browser_url=browser_url,
-        cdp_browser_url=cdp_browser_url,
-        browser_humanize=browser_humanize,
-        browser_proxy=browser_proxy,
-        browser_geoip=browser_geoip,
-        browser_locale=browser_locale,
-        browser_timezone=browser_timezone,
-        request_timeout=request_timeout,
-    )
-
-
-def _remote_cdp_provider_runtime_factory(**kwargs: Any):
-    kwargs.setdefault("browser", "remote-cdp")
-    return _native_web_runtime_factory(**kwargs)
-
-
-def build_default_runtime_registry(*, include_entry_points: bool = True, include_legacy_mcp: bool = True) -> RuntimeBackendRegistry:
-    """Build the default runtime backend registry without starting external processes."""
-
-    registry = RuntimeBackendRegistry()
-    registry.register(
-        RuntimeBackendRegistration(
-            backend_id="mock",
-            aliases=("in-process",),
-            factory=_mock_runtime_factory,
-            capabilities=RuntimeBackendCapabilities(
-                backend_id="mock",
-                display_name="Mock JSReverser Runtime",
-                transport="in-process",
-                target_platforms=["web"],
-                supports_browser_session=True,
-                supports_web_recon=True,
-                supports_protection_patch=True,
-                supports_artifact_export=True,
-                supports_runtime_context=True,
-                supports_replay_validation=True,
-                evidence_kinds=["request", "callstack", "static", "dynamic", "storage", "note"],
-                artifact_kinds=["json", "export", "rebuild", "markdown"],
-                notes=["deterministic in-process backend for tests and public CI"],
-            ),
-        )
-    )
-    registry.register(
-        RuntimeBackendRegistration(
-            backend_id="native-web",
-            aliases=("web", "browser-native"),
-            factory=_native_web_runtime_factory,
-            capabilities=RuntimeBackendCapabilities(
-                backend_id="native-web",
-                display_name="Native Web Runtime",
-                transport="browser-provider",
-                target_platforms=["web"],
-                supports_browser_session=True,
-                supports_web_recon=True,
-                supports_protection_patch=True,
-                supports_artifact_export=True,
-                supports_runtime_context=True,
-                supports_replay_validation=True,
-                managed_chrome=False,
-                mcp_backed=False,
-                evidence_kinds=["request", "static", "dynamic", "storage", "screenshot", "note"],
-                artifact_kinds=["json", "markdown", "screenshot"],
-                notes=[
-                    "native BrowserProvider-backed Web runtime",
-                    "does not require jsreverser-mcp",
-                    "default provider is playwright-chromium",
-                ],
-                config={"default_browser_provider": "playwright-chromium"},
-            ),
-        )
-    )
-
-    registry.register(
-        RuntimeBackendRegistration(
-            backend_id="remote-cdp",
-            aliases=("cdp-provider", "chrome-cdp-provider"),
-            factory=_remote_cdp_provider_runtime_factory,
-            capabilities=RuntimeBackendCapabilities(
-                backend_id="remote-cdp",
-                display_name="Remote Chrome CDP BrowserProvider",
-                transport="remote-cdp",
-                target_platforms=["web"],
-                supports_browser_session=True,
-                supports_web_recon=True,
-                supports_protection_patch=True,
-                supports_artifact_export=True,
-                supports_runtime_context=True,
-                supports_replay_validation=True,
-                managed_chrome=False,
-                mcp_backed=False,
-                evidence_kinds=["request", "static", "dynamic", "storage", "screenshot", "note"],
-                artifact_kinds=["json", "markdown", "screenshot"],
-                notes=[
-                    "connects to an already-running Chrome DevTools endpoint",
-                    "useful as a smoke path when Playwright is unavailable",
-                ],
-                config={"default_browser_url": "http://127.0.0.1:9222"},
-            ),
-        )
-    )
-
-    registry.register(
-        RuntimeBackendRegistration(
-            backend_id="playwright-cli",
-            aliases=("playwright", "pw-cli"),
-            factory=_playwright_cli_runtime_factory,
-            capabilities=RuntimeBackendCapabilities(
-                backend_id="playwright-cli",
-                display_name="Playwright CLI Runtime",
-                transport="playwright-cli",
-                target_platforms=["web"],
-                supports_browser_session=True,
-                supports_web_recon=True,
-                supports_protection_patch=False,
-                supports_artifact_export=True,
-                supports_runtime_context=False,
-                supports_replay_validation=False,
-                managed_chrome=False,
-                mcp_backed=False,
-                evidence_kinds=["static", "dynamic", "note"],
-                artifact_kinds=["json", "export", "source"],
-                notes=[
-                    "lightweight Web backend using side-effect-light Playwright CLI probes",
-                    "does not launch browsers or capture live network traffic",
-                ],
-                config={"default_command": "playwright --version"},
-            ),
-        )
-    )
-    registry.register(
-        RuntimeBackendRegistration(
-            backend_id="chrome-cdp",
-            aliases=("cdp", "devtools"),
-            factory=_chrome_cdp_runtime_factory,
-            capabilities=RuntimeBackendCapabilities(
-                backend_id="chrome-cdp",
-                display_name="Chrome CDP Runtime",
-                transport="chrome-cdp",
-                target_platforms=["web"],
-                supports_browser_session=True,
-                supports_web_recon=True,
-                supports_protection_patch=False,
-                supports_artifact_export=True,
-                supports_runtime_context=False,
-                supports_replay_validation=False,
-                managed_chrome=False,
-                mcp_backed=False,
-                evidence_kinds=["static", "dynamic", "note"],
-                artifact_kinds=["json", "export", "source", "session"],
-                notes=[
-                    "lightweight Web backend that probes an existing Chrome DevTools endpoint",
-                    "never starts Chrome; use managed Chrome launcher explicitly if needed",
-                ],
-                config={"default_browser_url": "http://127.0.0.1:9222"},
-            ),
-        )
-    )
-    registry.register(
-        RuntimeBackendRegistration(
-            backend_id="browser-cli",
-            aliases=("cli-browser", "browser-command"),
-            factory=_browser_cli_runtime_factory,
-            capabilities=RuntimeBackendCapabilities(
-                backend_id="browser-cli",
-                display_name="Generic Browser CLI Runtime",
-                transport="browser-cli",
-                target_platforms=["web"],
-                supports_browser_session=True,
-                supports_web_recon=True,
-                supports_protection_patch=False,
-                supports_artifact_export=True,
-                supports_runtime_context=False,
-                supports_replay_validation=False,
-                managed_chrome=False,
-                mcp_backed=False,
-                evidence_kinds=["static", "dynamic", "note"],
-                artifact_kinds=["json", "export", "source"],
-                notes=[
-                    "generic command-probed Web backend for portable CLI shims",
-                    "command is not configured by default and must be passed explicitly for a healthy session",
-                ],
-                config={"default_command": None},
-            ),
-        )
-    )
-
-    registry.register(
-        RuntimeBackendRegistration(
-            backend_id="android-adb",
-            aliases=("adb", "android-device"),
-            factory=_android_adb_runtime_factory,
-            capabilities=RuntimeBackendCapabilities(
-                backend_id="android-adb",
-                display_name="Android ADB Runtime",
-                transport="adb",
-                target_platforms=["android"],
-                supports_browser_session=False,
-                supports_web_recon=False,
-                supports_protection_patch=True,
-                supports_artifact_export=True,
-                supports_runtime_context=True,
-                supports_replay_validation=False,
-                evidence_kinds=["static", "dynamic", "storage", "network", "note"],
-                artifact_kinds=["json", "export", "runtime-context", "trace", "static-analysis"],
-                notes=["requires local adb for explicit probes; registry listing is side-effect free"],
-                config={"default_command": "adb", "requires_device": True},
-            ),
-        )
-    )
-    registry.register(
-        RuntimeBackendRegistration(
-            backend_id="ios-simulator",
-            aliases=("simctl", "ios-sim"),
-            factory=_ios_simulator_runtime_factory,
-            capabilities=RuntimeBackendCapabilities(
-                backend_id="ios-simulator",
-                display_name="iOS Simulator Runtime",
-                transport="xcrun-simctl",
-                target_platforms=["ios"],
-                supports_browser_session=False,
-                supports_web_recon=False,
-                supports_protection_patch=True,
-                supports_artifact_export=True,
-                supports_runtime_context=True,
-                supports_replay_validation=False,
-                evidence_kinds=["static", "dynamic", "storage", "network", "note"],
-                artifact_kinds=["json", "export", "runtime-context", "trace", "static-analysis"],
-                notes=["requires local xcrun/simctl for explicit probes; registry listing is side-effect free"],
-                config={"default_command": "xcrun simctl", "requires_simulator": True},
-            ),
-        )
-    )
-    registry.register(
-        RuntimeBackendRegistration(
-            backend_id="mini-program-devtools",
-            aliases=("mp-devtools", "wechat-devtools"),
-            factory=_mini_program_devtools_runtime_factory,
-            capabilities=RuntimeBackendCapabilities(
-                backend_id="mini-program-devtools",
-                display_name="Mini-program Developer Tools Runtime",
-                transport="vendor-devtools-cli",
-                target_platforms=["mini-program"],
-                supports_browser_session=False,
-                supports_web_recon=False,
-                supports_protection_patch=True,
-                supports_artifact_export=True,
-                supports_runtime_context=True,
-                supports_replay_validation=False,
-                evidence_kinds=["static", "dynamic", "hook", "storage", "network", "note"],
-                artifact_kinds=["json", "export", "runtime-context", "trace", "static-analysis", "package-metadata"],
-                notes=["requires configured vendor devtools CLI for explicit probes; registry listing is side-effect free"],
-                config={"vendor": "wechat", "requires_gui_tool": "depends-on-vendor"},
-            ),
-        )
-    )
-    if include_entry_points:
-        registry.load_entry_points()
-    if include_legacy_mcp and not registry.is_registered(LEGACY_MCP_BACKEND_ID):
-        try:
-            registry.register(legacy_mcp_backend_registration())
-        except LegacyMcpPluginUnavailableError:
-            # Core no longer ships a built-in legacy MCP fallback. The optional
-            # plugin is loaded through entry points when installed; otherwise
-            # runtime construction will surface structured install guidance.
-            pass
-    return registry
-
-
-DEFAULT_RUNTIME_BACKEND_REGISTRY = build_default_runtime_registry()
-
-
-def list_runtime_backends() -> list[dict[str, Any]]:
-    """Return JSON-serializable metadata for known runtime backends."""
-
-    return DEFAULT_RUNTIME_BACKEND_REGISTRY.list_metadata()
 
 
 def legacy_mcp_alias_warning(runtime_kind: str) -> str | None:
@@ -510,31 +107,6 @@ def legacy_mcp_alias_warning(runtime_kind: str) -> str | None:
     return _legacy_mcp_alias_warning(runtime_kind)
 
 
-def build_runtime(
-    runtime_kind: str,
-    browser_url: str | None = None,
-    mcp_command: str | None = None,
-    **runtime_kwargs: Any,
-) -> ReverseRuntime:
-    """Build a runtime backend by id or alias."""
-
-    try:
-        return DEFAULT_RUNTIME_BACKEND_REGISTRY.create(
-            runtime_kind,
-            browser_url=browser_url,
-            mcp_command=mcp_command,
-            **runtime_kwargs,
-        )
-    except ValueError as exc:
-        if is_legacy_mcp_runtime_kind(runtime_kind) and not DEFAULT_RUNTIME_BACKEND_REGISTRY.is_registered(runtime_kind):
-            guidance = legacy_mcp_install_guidance()
-            raise LegacyMcpPluginUnavailableError(
-                "Legacy MCP optional backend is not installed. "
-                f"runtime={runtime_kind!r}; package={guidance['package']!r}; "
-                f"install_hint={guidance['install_hint']!r}; "
-                f"preferred_web_runtime={guidance['preferred_web_runtime']!r}."
-            ) from exc
-        raise
 
 
 def write_outputs(
@@ -546,8 +118,6 @@ def write_outputs(
     export_bundle: dict[str, Any],
     runtime_capabilities: RuntimeBackendCapabilities | None = None,
     enable_workspace_dual_write: bool = False,
-    workspace_dual_write_artifact_keys: Iterable[str] | None = None,
-    browser_provider_smoke: dict[str, Any] | None = None,
 ) -> dict[str, str]:
     """Persist the standard workspace/report/export artifact set."""
 
@@ -558,10 +128,7 @@ def write_outputs(
     reports_dir.mkdir(parents=True, exist_ok=True)
     exports_dir.mkdir(parents=True, exist_ok=True)
 
-    workspace_resolver = WorkspacePathResolver(
-        enable_dual_write=enable_workspace_dual_write,
-        dual_write_artifact_keys=workspace_dual_write_artifact_keys,
-    )
+    workspace_resolver = WorkspacePathResolver(enable_dual_write=enable_workspace_dual_write)
     workspace_write_records: list[dict[str, Any]] = []
     report_json_path = reports_dir / "demo-final-result.json"
     report_md_path = reports_dir / "demo-final-report.md"
@@ -598,28 +165,13 @@ def write_outputs(
     output_paths.update({f"rebuild_{key}": value for key, value in rebuild_artifact_paths.items() if key != "rebuild_plan"})
     if "rebuild_plan" in rebuild_artifact_paths:
         output_paths["workspace_rebuild_plan"] = rebuild_artifact_paths["rebuild_plan"]
-    capabilities = runtime_capabilities or RuntimeBackendCapabilities(backend_id="unknown", display_name="Unknown Runtime")
-    browser_provider_smoke_path: Path | None = None
-    browser_provider_smoke_attachment: dict[str, Any] | None = None
-    browser_provider_smoke_acceptance: dict[str, Any] | None = None
-    if browser_provider_smoke is not None:
-        browser_provider_smoke_attachment = dict(browser_provider_smoke)
-        browser_provider_smoke_acceptance = _browser_provider_smoke_acceptance(browser_provider_smoke_attachment, capabilities)
-        browser_provider_smoke_attachment["attachment_acceptance"] = browser_provider_smoke_acceptance
-        browser_provider_smoke_path = _write_workspace_json(
-            base_dir,
-            "workspace_browser_provider_smoke",
-            browser_provider_smoke_attachment,
-            workspace_resolver,
-            workspace_write_records,
-        )
-        output_paths["workspace_browser_provider_smoke"] = str(browser_provider_smoke_path)
     if enable_workspace_dual_write:
         dual_write_plan_path = base_dir / "workspace" / "workspace-dual-write-plan.json"
         output_paths["workspace_dual_write_plan"] = str(dual_write_plan_path)
     manifest_path = base_dir / "workspace" / "backend-artifact-manifest.json"
     output_paths["workspace_backend_artifact_manifest"] = str(manifest_path)
 
+    capabilities = runtime_capabilities or RuntimeBackendCapabilities(backend_id="unknown", display_name="Unknown Runtime")
     runtime_artifacts = export_bundle.get("artifacts", []) if isinstance(export_bundle, dict) else []
     backend_artifact_manifest = _build_backend_artifact_manifest(capabilities, output_paths, extra_artifacts=runtime_artifacts)
     manifest_path = _write_workspace_json(base_dir, "workspace_backend_artifact_manifest", backend_artifact_manifest.model_dump(mode="json"), workspace_resolver, workspace_write_records)
@@ -646,15 +198,8 @@ def write_outputs(
         "backend_artifact_manifest": str(manifest_path),
         "rebuild_result": rebuild_result.model_dump(mode="json"),
     }
-    if browser_provider_smoke_path is not None:
-        artifact_index["workspace"]["browser_provider_smoke"] = str(browser_provider_smoke_path)
-        artifact_index["browser_provider_smoke"] = browser_provider_smoke_attachment
-        artifact_index["browser_provider_smoke_acceptance"] = browser_provider_smoke_acceptance
     if enable_workspace_dual_write:
-        dual_write_plan = _workspace_dual_write_plan_payload(
-            workspace_write_records,
-            dual_write_artifact_keys=workspace_dual_write_artifact_keys,
-        )
+        dual_write_plan = _workspace_dual_write_plan_payload(workspace_write_records)
         dual_write_plan_path = _write_workspace_json(base_dir, "workspace_dual_write_plan", dual_write_plan, workspace_resolver, workspace_write_records)
         artifact_index["workspace"]["dual_write_plan"] = str(dual_write_plan_path)
         artifact_index["workspace_dual_write"] = dual_write_plan
@@ -662,381 +207,6 @@ def write_outputs(
     return output_paths
 
 
-def _build_backend_artifact_manifest(
-    capabilities: RuntimeBackendCapabilities,
-    output_paths: dict[str, str],
-    extra_artifacts: list[dict[str, Any]] | None = None,
-) -> RuntimeArtifactManifest:
-    entries = [
-        RuntimeArtifactManifestEntry(
-            artifact_key=key,
-            path=path,
-            category=_artifact_category_from_key(key),
-            kind=_artifact_kind_from_path(path),
-            producer_backend_id=capabilities.backend_id,
-            producer_transport=capabilities.transport,
-            target_platforms=capabilities.target_platforms,
-            description=_artifact_description_from_key(key),
-            metadata=_artifact_manifest_entry_metadata(capabilities, key, path),
-        )
-        for key, path in sorted(output_paths.items())
-    ]
-    entries.extend(_runtime_artifact_manifest_entries(capabilities, extra_artifacts or []))
-    return RuntimeArtifactManifest(
-        producer_backend_id=capabilities.backend_id,
-        producer_transport=capabilities.transport,
-        target_platforms=capabilities.target_platforms,
-        entries=entries,
-    )
-
-
-ARTIFACT_CATEGORY_BY_KEY = {
-    "workspace_network_requests": "network",
-    "workspace_source_hits": "source",
-    "workspace_source_contexts": "source",
-    "workspace_script_inventory": "source",
-    "workspace_response_bodies": "network",
-    "workspace_websocket_frames": "network",
-    "workspace_hook_timeline": "hook-timeline",
-    "workspace_flow_timeline": "trace",
-    "workspace_stitched_flow": "trace",
-    "workspace_function_hooks": "hook-timeline",
-    "workspace_function_hook_timeline": "hook-timeline",
-    "workspace_module_hooks": "hook-timeline",
-    "workspace_module_hook_timeline": "hook-timeline",
-    "workspace_async_chunk_load_plan": "triage",
-    "workspace_async_chunk_traversal_graph": "triage",
-    "workspace_async_chunk_traversal_workflow_plan": "triage",
-    "workspace_async_chunk_traversal_workflow_execution": "audit",
-    "workspace_async_chunk_traversal_loop_plan": "triage",
-    "workspace_async_chunk_traversal_loop_execution": "audit",
-    "workspace_async_chunk_recursive_traversal_plan": "triage",
-    "workspace_async_chunk_recursive_traversal_followup": "audit",
-    "workspace_async_chunk_recursive_traversal_execution": "audit",
-    "workspace_async_chunk_module_diff": "triage",
-    "workspace_custom_loader_traversal_plan": "triage",
-    "workspace_custom_loader_traversal_graph": "triage",
-    "workspace_custom_loader_traversal_workflow_plan": "triage",
-    "workspace_custom_loader_traversal_workflow_execution": "audit",
-    "workspace_custom_loader_traversal_loop_plan": "triage",
-    "workspace_custom_loader_traversal_loop_execution": "audit",
-    "workspace_custom_loader_recursive_traversal_plan": "triage",
-    "workspace_custom_loader_recursive_traversal_followup": "audit",
-    "workspace_custom_loader_recursive_traversal_execution": "audit",
-    "workspace_custom_loader_continuation_workflow": "triage",
-    "workspace_custom_loader_continuation_journal": "audit",
-    "workspace_custom_loader_continuation_execution": "audit",
-    "workspace_custom_loader_execution_preflight": "triage",
-    "workspace_custom_loader_execution_result": "trace",
-    "workspace_custom_loader_module_diff": "triage",
-    "workspace_module_federation_get_init_plan": "triage",
-    "workspace_module_federation_get_init_result": "trace",
-    "workspace_module_federation_factory_invoke_result": "trace",
-    "workspace_module_federation_export_hook_plan": "triage",
-    "workspace_module_federation_traversal_graph": "triage",
-    "workspace_module_federation_traversal_workflow_plan": "triage",
-    "workspace_module_federation_traversal_workflow_execution": "audit",
-    "workspace_module_federation_recursive_traversal_plan": "triage",
-    "workspace_module_federation_recursive_traversal_followup": "audit",
-    "workspace_module_federation_recursive_traversal_execution": "audit",
-    "workspace_module_federation_recursive_continuation_journal": "audit",
-    "workspace_module_federation_recursive_continuation_checkpoint": "audit",
-    "workspace_recursive_continuation_readiness": "audit",
-    "workspace_async_chunk_load_result": "trace",
-    "workspace_source_map_fetch_plan": "triage",
-    "workspace_source_map_fetch_result": "trace",
-    "workspace_source_map_lookup": "triage",
-    "workspace_source_map_source_content": "triage",
-    "workspace_source_map_readiness": "triage",
-    "workspace_source_map_consumer_action_plan": "triage",
-    "workspace_source_map_consumer_materialization": "triage",
-    "workspace_source_map_typed_payload_preflight": "triage",
-    "workspace_source_map_followthrough_review": "triage",
-    "workspace_source_map_followthrough_chain_readiness": "triage",
-    "workspace_source_map_followthrough_one_step_plan": "triage",
-    "workspace_source_map_followthrough_dispatch_preflight": "triage",
-    "workspace_source_map_followthrough_dispatch_approval_plan": "triage",
-    "workspace_source_map_followthrough_dispatch_approval_record": "audit",
-    "workspace_source_map_followthrough_dispatch_transaction_preflight": "audit",
-    "workspace_source_map_followthrough_dispatch_transaction_journal": "audit",
-    "workspace_source_map_followthrough_dispatch_bounded_executor_gate": "audit",
-    "workspace_source_map_followthrough_dispatcher_handoff": "audit",
-    "workspace_source_map_followthrough_dispatcher_apply_preflight": "audit",
-    "workspace_source_map_followthrough_dispatcher_result": "audit",
-    "workspace_source_map_followthrough_surface_selection": "triage",
-    "workspace_source_map_selected_executor_input_review": "triage",
-    "workspace_source_map_selected_executor_approval_plan": "triage",
-    "workspace_source_map_selected_executor_approval_record": "audit",
-    "workspace_source_map_selected_executor_apply_preflight": "audit",
-    "workspace_source_map_selected_executor_application_handoff": "audit",
-    "workspace_source_map_selected_executor_result_checkpoint": "audit",
-    "workspace_source_map_followthrough_completion_checkpoint": "audit",
-    "workspace_source_map_terminal_review_package": "audit",
-    "workspace_source_map_terminal_review_closure_checkpoint": "audit",
-    "workspace_source_map_terminal_review_final_audit": "audit",
-    "workspace_source_map_source_logpoint_install_result": "audit",
-    "workspace_source_map_debugger_candidates": "triage",
-    "workspace_source_map_debugger_candidate_selection": "triage",
-    "workspace_source_map_debugger_execution_result": "audit",
-    "workspace_source_map_hook_candidates": "triage",
-    "workspace_source_map_hook_candidate_selection": "triage",
-    "workspace_source_map_hook_install_result": "audit",
-    "workspace_source_map_rebuild_result": "audit",
-    "workspace_source_map_rebuild_generation_result": "audit",
-    "workspace_bundler_symbol_scope": "triage",
-    "workspace_source_logpoints": "trace",
-    "workspace_source_logpoint_timeline": "trace",
-    "workspace_mutation_audit": "trace",
-    "workspace_page_mutation_audit": "trace",
-    "workspace_object_root_mutation_audit": "trace",
-    "workspace_object_graph_diff": "triage",
-    "workspace_runtime_object_graph_diff": "triage",
-    "workspace_heap_snapshot_readiness": "triage",
-    "workspace_heap_snapshot_collect": "audit",
-    "workspace_heap_snapshot_diff_readiness": "triage",
-    "workspace_heap_snapshot_diff_executor_preflight": "triage",
-    "workspace_heap_snapshot_diff_executor_approval_plan": "triage",
-    "workspace_heap_snapshot_diff_executor_approval_record": "audit",
-    "workspace_heap_snapshot_diff_executor_transaction_preflight": "triage",
-    "workspace_heap_snapshot_diff_executor_transaction_journal": "audit",
-    "workspace_heap_snapshot_diff_executor_bounded_gate": "triage",
-    "workspace_heap_snapshot_diff_executor_result": "audit",
-    "workspace_heap_snapshot_diff_followup_checkpoint": "audit",
-    "workspace_heap_snapshot_diff_selected_analysis_input_preflight": "triage",
-    "workspace_heap_snapshot_constructor_growth_drilldown": "triage",
-    "workspace_heap_snapshot_constructor_growth_drilldown_analysis": "audit",
-    "workspace_heap_snapshot_automatic_followup_plan": "triage",
-    "workspace_heap_snapshot_retained_size_proof_plan": "triage",
-    "workspace_heap_snapshot_path_to_root_proof_plan": "triage",
-    "workspace_heap_snapshot_raw_heap_constructor_drilldown_proof_plan": "triage",
-    "workspace_heap_snapshot_retained_path_preflight": "triage",
-    "workspace_heap_snapshot_retained_size_input_review": "triage",
-    "workspace_heap_snapshot_retained_size_approval_plan": "triage",
-    "workspace_heap_snapshot_retained_size_approval_record": "audit",
-    "workspace_heap_snapshot_retained_size_transaction_preflight": "triage",
-    "workspace_heap_snapshot_retained_size_transaction_journal": "audit",
-    "workspace_heap_snapshot_retained_size_bounded_gate": "triage",
-    "workspace_heap_snapshot_retained_size_analysis": "audit",
-    "workspace_heap_snapshot_path_to_root_analysis": "audit",
-    "workspace_mutation_observer_timeline": "trace",
-    "workspace_breakpoints": "trace",
-    "workspace_debugger_paused": "trace",
-    "workspace_callframes": "trace",
-    "workspace_callframe_evaluations": "trace",
-    "workspace_debugger_actions": "trace",
-    "workspace_debugger_session": "trace",
-    "workspace_debugger_timeline": "trace",
-    "workspace_paused_session_live_continuation_preflight": "audit",
-    "workspace_paused_session_target_attach_readiness": "audit",
-    "workspace_paused_session_cross_process_execution_plan": "triage",
-    "workspace_paused_session_cross_process_session_lifecycle": "triage",
-    "workspace_paused_session_cross_process_attach_probe": "audit",
-    "workspace_paused_session_live_callframe_recovery": "audit",
-    "workspace_paused_session_cross_process_one_action_execution": "audit",
-    "workspace_paused_session_next_paused_event_capture_plan": "triage",
-    "workspace_paused_session_next_paused_event_capture_execution": "audit",
-    "workspace_paused_session_pre_action_subscribe_and_action": "audit",
-    "workspace_paused_session_cross_process_continuation_checkpoint": "audit",
-    "workspace_paused_session_multi_step_continuation_workflow": "triage",
-    "workspace_paused_session_multi_step_continuation_execution": "audit",
-    "workspace_paused_session_multi_step_loop_plan": "triage",
-    "workspace_paused_session_multi_step_loop_execution": "audit",
-    "workspace_paused_session_automatic_loop_readiness": "triage",
-    "workspace_paused_session_automatic_loop_execution_plan": "triage",
-    "workspace_paused_session_automatic_loop_executor_preflight": "triage",
-    "workspace_paused_session_automatic_loop_executor_approval_plan": "triage",
-    "workspace_paused_session_automatic_loop_executor_approval_record": "audit",
-    "workspace_paused_session_automatic_loop_transaction_preflight": "audit",
-    "workspace_paused_session_automatic_loop_executor_journal": "audit",
-    "workspace_paused_session_automatic_loop_bounded_executor_gate": "audit",
-    "workspace_paused_session_automatic_loop_execution_result": "audit",
-    "workspace_paused_session_automatic_loop_followup_checkpoint": "audit",
-    "workspace_paused_session_automatic_loop_next_iteration_plan": "triage",
-    "workspace_paused_session_automatic_loop_next_iteration_execution": "audit",
-    "workspace_paused_session_automatic_loop_next_iteration_followup_checkpoint": "audit",
-    "workspace_paused_session_automatic_loop_following_iteration_plan": "triage",
-    "workspace_paused_session_automatic_loop_multi_iteration_policy": "triage",
-    "workspace_paused_session_automatic_loop_multi_iteration_executor_preflight": "triage",
-    "workspace_paused_session_automatic_loop_multi_iteration_execution_plan": "triage",
-    "workspace_paused_session_automatic_loop_multi_iteration_executor_approval_plan": "triage",
-    "workspace_paused_session_automatic_loop_multi_iteration_executor_approval_record": "audit",
-    "workspace_paused_session_automatic_loop_multi_iteration_transaction_preflight": "audit",
-    "workspace_paused_session_automatic_loop_multi_iteration_executor_journal": "audit",
-    "workspace_paused_session_automatic_loop_multi_iteration_bounded_executor_gate": "audit",
-    "workspace_paused_session_automatic_loop_multi_iteration_execution_result": "audit",
-    "workspace_paused_session_automatic_loop_multi_iteration_followup_checkpoint": "audit",
-    "workspace_paused_session_automatic_loop_multi_iteration_next_step_plan": "triage",
-    "workspace_paused_session_automatic_loop_multi_iteration_executor_input_preflight": "triage",
-    "workspace_closure_functions": "trace",
-    "workspace_closure_function_candidates": "triage",
-    "workspace_closure_wrapper_replacement_plan": "triage",
-    "workspace_closure_wrapper_assignment_safety": "triage",
-    "workspace_closure_wrapper_runtime_mutability_preflight": "triage",
-    "workspace_closure_wrapper_runtime_mutability_result": "audit",
-    "workspace_closure_wrapper_replacement_execution": "audit",
-    "workspace_closure_wrapper_restore_plan": "audit",
-    "workspace_closure_wrapper_restore_execution": "audit",
-    "workspace_closure_wrapper_events": "hook-timeline",
-    "workspace_closure_wrapper_continuation_readiness": "triage",
-    "workspace_closure_wrapper_continuation_execution_plan": "triage",
-    "workspace_closure_wrapper_continuation_execution": "audit",
-    "workspace_closure_wrapper_continuation_checkpoint": "triage",
-    "workspace_closure_wrapper_continuation_next_iteration_plan": "triage",
-    "workspace_closure_wrapper_continuation_next_iteration_execution": "audit",
-    "workspace_request_initiators": "trace",
-    "workspace_navigation_events": "trace",
-    "workspace_browser_provider_smoke": "runtime-context",
-    "workspace_runtime_context": "runtime-context",
-    "workspace_dom_snapshot": "runtime-context",
-    "workspace_console_messages": "runtime-context",
-    "workspace_runtime_context_diff": "runtime-context",
-    "workspace_runtime_capabilities": "runtime-context",
-    "workspace_runtime_export_bundle": "export",
-    "workspace_workspace_contract": "workspace",
-    "workspace_platform_tool_probe": "runtime-context",
-    "workspace_function_candidates": "source",
-    "workspace_function_validations": "trace",
-    "workspace_function_validation_summary": "trace",
-    "workspace_evidence_candidates": "evidence",
-    "workspace_evidence_validated": "evidence",
-    "workspace_evidence_promotion": "evidence",
-    "workspace_stitched_flow_physical_rollback_diff": "trace",
-    "workspace_stitched_flow_physical_rollback_results": "trace",
-    "workspace_review_gate_after_rollback": "triage",
-    "workspace_review_gate_after_physical_rollback": "triage",
-    "workspace_review_gate_replacement_results": "triage",
-    "workspace_delivery_guard_after_review_gate_replacement": "triage",
-    "workspace_final_delivery_package_after_review_gate_replacement": "export",
-    "workspace_final_delivery_transaction_commit": "export",
-    "workspace_delivery_receipt": "export",
-    "workspace_delivery_transaction_journal": "export",
-    "workspace_external_delivery_result": "export",
-    "workspace_external_delivery_duplicate_guard": "export",
-    "workspace_delivery_manifest_revision": "export",
-    "workspace_backend_artifact_manifest_mutation": "export",
-    "workspace_backend_artifact_manifest_patched": "export",
-    "workspace_backend_artifact_manifest_preflight": "triage",
-    "workspace_backend_artifact_manifest_in_place_mutation": "export",
-    "workspace_backend_artifact_manifest_rollback": "export",
-    "workspace_backend_artifact_manifest_recovery_preflight": "triage",
-    "workspace_backend_artifact_manifest_recovery": "export",
-    "workspace_backend_artifact_manifest_transaction_commit": "export",
-    "workspace_review_gate": "triage",
-}
-
-
-def _artifact_manifest_entry_metadata(capabilities: RuntimeBackendCapabilities, artifact_key: str, path: str) -> dict[str, Any]:
-    metadata: dict[str, Any] = {"path_style": "virtual" if path.startswith("virtual://") else "filesystem"}
-    metadata.update(workspace_manifest_alias_metadata(artifact_key))
-    provider = capabilities.config.get("provider") if isinstance(capabilities.config, dict) else None
-    if isinstance(provider, dict):
-        provider_id = provider.get("provider_id")
-        if provider_id:
-            metadata["browser_provider"] = provider_id
-        provider_transport = provider.get("transport")
-        if provider_transport:
-            metadata["browser_provider_transport"] = provider_transport
-    return metadata
-
-
-def _browser_provider_smoke_acceptance(smoke_payload: dict[str, Any], capabilities: RuntimeBackendCapabilities) -> dict[str, Any]:
-    """Review existing BrowserProvider smoke JSON before attaching it to Web artifacts."""
-
-    provider = capabilities.config.get("provider") if isinstance(capabilities.config, dict) else None
-    expected_provider_id = str(provider.get("provider_id") or "") if isinstance(provider, dict) else ""
-    return browser_provider_smoke_acceptance(smoke_payload, expected_provider_id=expected_provider_id)
-
-
-def _artifact_category_from_key(key: str) -> str:
-    if key in ARTIFACT_CATEGORY_BY_KEY:
-        return ARTIFACT_CATEGORY_BY_KEY[key]
-    if key.startswith("workspace_"):
-        return "workspace"
-    if key.startswith("rebuild_"):
-        return "rebuild"
-    if key in {"json", "markdown"}:
-        return "report"
-    if key == "index":
-        return "export"
-    return "other"
-
-
-def _artifact_kind_from_path(path: str) -> str:
-    suffix = Path(path).suffix.lower()
-    if suffix == ".json":
-        return "json"
-    if suffix in {".md", ".markdown"}:
-        return "markdown"
-    if suffix == ".py":
-        return "rebuild"
-    return "other"
-
-
-def _runtime_artifact_manifest_entries(
-    capabilities: RuntimeBackendCapabilities,
-    artifacts: list[dict[str, Any]],
-) -> list[RuntimeArtifactManifestEntry]:
-    entries: list[RuntimeArtifactManifestEntry] = []
-    for index, artifact in enumerate(artifacts):
-        if not isinstance(artifact, dict):
-            continue
-        path = str(artifact.get("path") or "")
-        if not path:
-            continue
-        metadata = artifact.get("metadata") if isinstance(artifact.get("metadata"), dict) else {}
-        artifact_key = str(
-            artifact.get("artifact_key")
-            or metadata.get("artifact_key")
-            or _artifact_key_from_runtime_path(path, index)
-        )
-        entry_metadata = dict(metadata)
-        entry_metadata.setdefault("path_style", "virtual" if path.startswith("virtual://") else "filesystem")
-        entry_metadata.setdefault("source", "runtime_export_bundle")
-        entries.append(
-            RuntimeArtifactManifestEntry(
-                artifact_key=artifact_key,
-                path=path,
-                category=_artifact_category_from_runtime_artifact(path, artifact, metadata),
-                kind=str(artifact.get("kind") or _artifact_kind_from_path(path)),
-                producer_backend_id=capabilities.backend_id,
-                producer_transport=capabilities.transport,
-                target_platforms=capabilities.target_platforms,
-                description=artifact.get("description"),
-                metadata=entry_metadata,
-            )
-        )
-    return entries
-
-
-def _artifact_key_from_runtime_path(path: str, index: int) -> str:
-    normalized = path
-    for prefix in ("virtual://", "file://"):
-        if normalized.startswith(prefix):
-            normalized = normalized[len(prefix):]
-            break
-    normalized = normalized.strip("/") or f"artifact_{index}"
-    stem = Path(normalized).with_suffix("").as_posix()
-    safe = "".join(ch if ch.isalnum() else "_" for ch in stem).strip("_")
-    return f"runtime_{safe or f'artifact_{index}'}"
-
-
-def _artifact_category_from_runtime_artifact(path: str, artifact: dict[str, Any], metadata: dict[str, Any]) -> str:
-    explicit_category = artifact.get("category") or metadata.get("category")
-    if explicit_category:
-        return str(explicit_category)
-    if path.startswith("virtual://exports/session"):
-        return "session"
-    if path.startswith("virtual://exports/"):
-        return "export"
-    if path.startswith("virtual://workspace/"):
-        return _artifact_category_from_key(_artifact_key_from_runtime_path(path, 0))
-    if path.startswith("virtual://protection/"):
-        return "triage"
-    return "other"
-
-
-def _artifact_description_from_key(key: str) -> str:
-    return key.replace("_", " ")
 
 
 
@@ -1087,7 +257,6 @@ def run_platform_pipeline(
     runtime_kind: str = "android-adb",
     runtime: ReverseRuntime | None = None,
     enable_workspace_dual_write: bool = False,
-    workspace_dual_write_artifact_keys: Iterable[str] | None = None,
     **runtime_kwargs: Any,
 ) -> PlatformPipelineOutput:
     """Run a platform-neutral runtime pipeline without assuming browser/Web recon semantics.
@@ -1113,7 +282,6 @@ def run_platform_pipeline(
         capabilities,
         export_bundle,
         enable_workspace_dual_write=enable_workspace_dual_write,
-        workspace_dual_write_artifact_keys=workspace_dual_write_artifact_keys,
     )
     return PlatformPipelineOutput(
         final_result=final_result,
@@ -1131,7 +299,6 @@ def write_platform_outputs(
     runtime_capabilities: RuntimeBackendCapabilities,
     export_bundle: RuntimeExportBundle,
     enable_workspace_dual_write: bool = False,
-    workspace_dual_write_artifact_keys: Iterable[str] | None = None,
 ) -> dict[str, str]:
     """Persist the platform-neutral workspace/report/export artifact set."""
 
@@ -1142,10 +309,7 @@ def write_platform_outputs(
     reports_dir.mkdir(parents=True, exist_ok=True)
     exports_dir.mkdir(parents=True, exist_ok=True)
 
-    workspace_resolver = WorkspacePathResolver(
-        enable_dual_write=enable_workspace_dual_write,
-        dual_write_artifact_keys=workspace_dual_write_artifact_keys,
-    )
+    workspace_resolver = WorkspacePathResolver(enable_dual_write=enable_workspace_dual_write)
     workspace_write_records: list[dict[str, Any]] = []
     report_json_path = reports_dir / "platform-pipeline-result.json"
     report_md_path = reports_dir / "platform-pipeline-report.md"
@@ -1209,10 +373,7 @@ def write_platform_outputs(
         "backend_artifact_manifest": str(manifest_path),
     }
     if enable_workspace_dual_write:
-        dual_write_plan = _workspace_dual_write_plan_payload(
-            workspace_write_records,
-            dual_write_artifact_keys=workspace_dual_write_artifact_keys,
-        )
+        dual_write_plan = _workspace_dual_write_plan_payload(workspace_write_records)
         dual_write_plan_path = _write_workspace_json(base_dir, "workspace_dual_write_plan", dual_write_plan, workspace_resolver, workspace_write_records)
         artifact_index["workspace"]["dual_write_plan"] = str(dual_write_plan_path)
         artifact_index["workspace_dual_write"] = dual_write_plan
@@ -1359,8 +520,6 @@ def run_reverse_pipeline(
     mcp_command: str | None = None,
     runtime: WebReverseRuntime | None = None,
     enable_workspace_dual_write: bool = False,
-    workspace_dual_write_artifact_keys: Iterable[str] | None = None,
-    browser_provider_smoke: dict[str, Any] | None = None,
     **runtime_kwargs: Any,
 ) -> ReversePipelineOutput:
     """Run the deterministic reverse coordinator pipeline.
@@ -1374,8 +533,8 @@ def run_reverse_pipeline(
     task_card = normalize_task_card(task_text)
     route_result = route_from_task_card(task_card, task_text=task_text)
     chrome_launch = None
-    should_stop_chrome = False
     chrome_stop = None
+    should_stop_chrome = False
     owns_runtime = runtime is None
     active_runtime = runtime or build_runtime(
         runtime_kind,
@@ -1392,7 +551,11 @@ def run_reverse_pipeline(
             )
         runtime_capabilities = active_runtime.describe_capabilities()
 
-        chrome_launch, should_stop_chrome = launch_browser_if_legacy_mcp(runtime_kind, chrome_config, ensure_chrome, keep_chrome)
+        if _is_legacy_mcp_runtime_kind(runtime_kind) and ensure_chrome:
+            chrome_launch = ensure_chrome_debug(chrome_config)
+            if not chrome_launch.ok:
+                raise RuntimeError(f"Failed to ensure Chrome debug session: {chrome_launch.stderr or chrome_launch.stdout}")
+            should_stop_chrome = not keep_chrome
 
         recon_result = active_runtime.run_web_recon(task_card=task_card, route_result=route_result)
         final_result = _final_from_recon(task_card, route_result, recon_result)
@@ -1402,7 +565,8 @@ def run_reverse_pipeline(
             close = getattr(active_runtime, "close", None)
             if callable(close):
                 close()
-        chrome_stop = stop_browser_if_needed(chrome_config, should_stop_chrome)
+        if should_stop_chrome:
+            chrome_stop = stop_chrome_debug(chrome_config)
 
     paths = write_outputs(
         artifact_root,
@@ -1413,8 +577,6 @@ def run_reverse_pipeline(
         export_bundle,
         runtime_capabilities=runtime_capabilities,
         enable_workspace_dual_write=enable_workspace_dual_write,
-        workspace_dual_write_artifact_keys=workspace_dual_write_artifact_keys,
-        browser_provider_smoke=browser_provider_smoke,
     )
     return ReversePipelineOutput(
         final_result=final_result,
@@ -1423,6 +585,9 @@ def run_reverse_pipeline(
         chrome_stop=chrome_stop,
     )
 
+
+def _is_legacy_mcp_runtime_kind(runtime_kind: str) -> bool:
+    return is_legacy_mcp_runtime_kind(runtime_kind)
 
 
 def _write_json(path: Path, payload: Any) -> None:
@@ -1457,8 +622,6 @@ def _write_workspace_json(
             "virtual_uri": resolution.virtual_uri,
             "write_paths": written_paths,
             "dual_write_enabled": resolution.dual_write_enabled,
-            "dual_write_scope_enabled": resolution.dual_write_scope_enabled,
-            "dual_write_in_scope": resolution.dual_write_in_scope,
             "physical_migration_enabled": resolution.physical_migration_enabled,
             "canonical_path_remains_authoritative": resolution.canonical_path_remains_authoritative,
             "migration_status": resolution.migration_status,
@@ -1477,30 +640,16 @@ def _workspace_filesystem_path(base_dir: Path, workspace_path: str) -> Path:
     return base_dir / "workspace" / workspace_path
 
 
-def _workspace_dual_write_plan_payload(
-    write_records: list[dict[str, Any]],
-    *,
-    dual_write_artifact_keys: Iterable[str] | None = None,
-) -> dict[str, Any]:
+def _workspace_dual_write_plan_payload(write_records: list[dict[str, Any]]) -> dict[str, Any]:
     dual_written = [record for record in write_records if record.get("dual_write_enabled")]
-    scoped = dual_write_artifact_keys is not None
-    scope_keys = sorted(str(key) for key in dual_write_artifact_keys or [] if str(key))
-    out_of_scope = [
-        record
-        for record in write_records
-        if scoped and record.get("artifact_key") not in set(scope_keys)
-    ]
     return {
         "schema_version": "reverse-deepagent.workspace-dual-write-plan.v1",
         "status": "applied" if dual_written else "not-enabled",
-        "mode": "scoped-opt-in-dual-write" if scoped else "opt-in-dual-write",
+        "mode": "opt-in-dual-write",
         "canonical_path_remains_authoritative": True,
         "physical_migration_enabled": False,
-        "dual_write_scope_enabled": scoped,
-        "dual_write_scope_artifact_keys": scope_keys,
         "record_count": len(write_records),
         "dual_written_count": len(dual_written),
-        "out_of_scope_record_count": len(out_of_scope),
         "records": write_records,
     }
 
@@ -1583,230 +732,10 @@ def _extract_workspace_artifact_payloads(final_result: FinalResult) -> dict[str,
             payloads["function-hooks.json"] = evidence.details
         elif evidence.source == "function_hook_timeline":
             payloads["function-hook-timeline.json"] = evidence.details
-        elif evidence.source == "async_chunk_load_plan":
-            payloads["async-chunk-load-plan.json"] = evidence.details
-        elif evidence.source == "async_chunk_traversal_graph":
-            payloads["async-chunk-traversal-graph.json"] = evidence.details
-        elif evidence.source == "async_chunk_traversal_workflow_plan":
-            payloads["async-chunk-traversal-workflow-plan.json"] = evidence.details
-        elif evidence.source == "async_chunk_traversal_workflow_execution":
-            payloads["async-chunk-traversal-workflow-execution.json"] = evidence.details
-        elif evidence.source == "async_chunk_traversal_loop_plan":
-            payloads["async-chunk-traversal-loop-plan.json"] = evidence.details
-        elif evidence.source == "async_chunk_traversal_loop_execution":
-            payloads["async-chunk-traversal-loop-execution.json"] = evidence.details
-        elif evidence.source == "async_chunk_recursive_traversal_plan":
-            payloads["async-chunk-recursive-traversal-plan.json"] = evidence.details
-        elif evidence.source == "async_chunk_recursive_traversal_followup":
-            payloads["async-chunk-recursive-traversal-followup.json"] = evidence.details
-        elif evidence.source == "async_chunk_recursive_traversal_execution":
-            payloads["async-chunk-recursive-traversal-execution.json"] = evidence.details
-        elif evidence.source == "async_chunk_module_diff":
-            payloads["async-chunk-module-diff.json"] = evidence.details
-        elif evidence.source == "custom_loader_traversal_plan":
-            payloads["custom-loader-traversal-plan.json"] = evidence.details
-        elif evidence.source == "custom_loader_traversal_graph":
-            payloads["custom-loader-traversal-graph.json"] = evidence.details
-        elif evidence.source == "custom_loader_traversal_workflow_plan":
-            payloads["custom-loader-traversal-workflow-plan.json"] = evidence.details
-        elif evidence.source == "custom_loader_traversal_workflow_execution":
-            payloads["custom-loader-traversal-workflow-execution.json"] = evidence.details
-        elif evidence.source == "custom_loader_traversal_loop_plan":
-            payloads["custom-loader-traversal-loop-plan.json"] = evidence.details
-        elif evidence.source == "custom_loader_traversal_loop_execution":
-            payloads["custom-loader-traversal-loop-execution.json"] = evidence.details
-        elif evidence.source == "custom_loader_recursive_traversal_plan":
-            payloads["custom-loader-recursive-traversal-plan.json"] = evidence.details
-        elif evidence.source == "custom_loader_recursive_traversal_followup":
-            payloads["custom-loader-recursive-traversal-followup.json"] = evidence.details
-        elif evidence.source == "custom_loader_recursive_traversal_execution":
-            payloads["custom-loader-recursive-traversal-execution.json"] = evidence.details
-        elif evidence.source == "custom_loader_continuation_workflow":
-            payloads["custom-loader-continuation-workflow.json"] = evidence.details
-        elif evidence.source == "custom_loader_continuation_journal":
-            payloads["custom-loader-continuation-journal.json"] = evidence.details
-        elif evidence.source == "custom_loader_continuation_execution":
-            payloads["custom-loader-continuation-execution.json"] = evidence.details
-        elif evidence.source == "custom_loader_execution_preflight":
-            payloads["custom-loader-execution-preflight.json"] = evidence.details
-        elif evidence.source == "custom_loader_execution_result":
-            payloads["custom-loader-execution-result.json"] = evidence.details
-        elif evidence.source == "custom_loader_module_diff":
-            payloads["custom-loader-module-diff.json"] = evidence.details
-        elif evidence.source == "module_federation_get_init_plan":
-            payloads["module-federation-get-init-plan.json"] = evidence.details
-        elif evidence.source == "module_federation_get_init_result":
-            payloads["module-federation-get-init-result.json"] = evidence.details
-        elif evidence.source == "module_federation_factory_invoke_result":
-            payloads["module-federation-factory-invoke-result.json"] = evidence.details
-        elif evidence.source == "module_federation_export_hook_plan":
-            payloads["module-federation-export-hook-plan.json"] = evidence.details
-        elif evidence.source == "module_federation_traversal_graph":
-            payloads["module-federation-traversal-graph.json"] = evidence.details
-        elif evidence.source == "module_federation_traversal_workflow_plan":
-            payloads["module-federation-traversal-workflow-plan.json"] = evidence.details
-        elif evidence.source == "module_federation_traversal_workflow_execution":
-            payloads["module-federation-traversal-workflow-execution.json"] = evidence.details
-        elif evidence.source == "module_federation_recursive_traversal_plan":
-            payloads["module-federation-recursive-traversal-plan.json"] = evidence.details
-        elif evidence.source == "module_federation_recursive_traversal_followup":
-            payloads["module-federation-recursive-traversal-followup.json"] = evidence.details
-        elif evidence.source == "module_federation_recursive_traversal_execution":
-            payloads["module-federation-recursive-traversal-execution.json"] = evidence.details
-        elif evidence.source == "module_federation_recursive_continuation_journal":
-            payloads["module-federation-recursive-continuation-journal.json"] = evidence.details
-        elif evidence.source == "module_federation_recursive_continuation_checkpoint":
-            payloads["module-federation-recursive-continuation-checkpoint.json"] = evidence.details
-        elif evidence.source == "recursive_continuation_readiness":
-            payloads["recursive-continuation-readiness.json"] = evidence.details
-        elif evidence.source == "async_chunk_load_result":
-            payloads["async-chunk-load-result.json"] = evidence.details
-        elif evidence.source == "source_map_fetch_plan":
-            payloads["source-map-fetch-plan.json"] = evidence.details
-        elif evidence.source == "source_map_fetch_result":
-            payloads["source-map-fetch-result.json"] = evidence.details
-        elif evidence.source == "source_map_lookup":
-            payloads["source-map-lookup.json"] = evidence.details
-        elif evidence.source == "source_map_source_content":
-            payloads["source-map-source-content.json"] = evidence.details
-        elif evidence.source == "source_map_readiness":
-            payloads["source-map-readiness.json"] = evidence.details
-        elif evidence.source == "source_map_consumer_action_plan":
-            payloads["source-map-consumer-action-plan.json"] = evidence.details
-        elif evidence.source == "source_map_consumer_materialization":
-            payloads["source-map-consumer-materialization.json"] = evidence.details
-        elif evidence.source == "source_map_typed_payload_preflight":
-            payloads["source-map-typed-payload-preflight.json"] = evidence.details
-        elif evidence.source == "source_map_followthrough_review":
-            payloads["source-map-followthrough-review.json"] = evidence.details
-        elif evidence.source == "source_map_followthrough_chain_readiness":
-            payloads["source-map-followthrough-chain-readiness.json"] = evidence.details
-        elif evidence.source == "source_map_followthrough_one_step_plan":
-            payloads["source-map-followthrough-one-step-plan.json"] = evidence.details
-        elif evidence.source == "source_map_followthrough_dispatch_preflight":
-            payloads["source-map-followthrough-dispatch-preflight.json"] = evidence.details
-        elif evidence.source == "source_map_followthrough_dispatch_approval_plan":
-            payloads["source-map-followthrough-dispatch-approval-plan.json"] = evidence.details
-        elif evidence.source == "source_map_followthrough_dispatch_approval_record":
-            payloads["source-map-followthrough-dispatch-approval-record.json"] = evidence.details
-        elif evidence.source == "source_map_followthrough_dispatch_transaction_preflight":
-            payloads["source-map-followthrough-dispatch-transaction-preflight.json"] = evidence.details
-        elif evidence.source == "source_map_followthrough_dispatch_transaction_journal":
-            payloads["source-map-followthrough-dispatch-transaction-journal.json"] = evidence.details
-        elif evidence.source == "source_map_followthrough_dispatch_bounded_executor_gate":
-            payloads["source-map-followthrough-dispatch-bounded-executor-gate.json"] = evidence.details
-        elif evidence.source == "source_map_followthrough_dispatcher_handoff":
-            payloads["source-map-followthrough-dispatcher-handoff.json"] = evidence.details
-        elif evidence.source == "source_map_followthrough_dispatcher_apply_preflight":
-            payloads["source-map-followthrough-dispatcher-apply-preflight.json"] = evidence.details
-        elif evidence.source == "source_map_followthrough_dispatcher_result":
-            payloads["source-map-followthrough-dispatcher-result.json"] = evidence.details
-        elif evidence.source == "source_map_followthrough_surface_selection":
-            payloads["source-map-followthrough-surface-selection.json"] = evidence.details
-        elif evidence.source == "source_map_selected_executor_input_review":
-            payloads["source-map-selected-executor-input-review.json"] = evidence.details
-        elif evidence.source == "source_map_selected_executor_approval_plan":
-            payloads["source-map-selected-executor-approval-plan.json"] = evidence.details
-        elif evidence.source == "source_map_selected_executor_approval_record":
-            payloads["source-map-selected-executor-approval-record.json"] = evidence.details
-        elif evidence.source == "source_map_selected_executor_apply_preflight":
-            payloads["source-map-selected-executor-apply-preflight.json"] = evidence.details
-        elif evidence.source == "source_map_selected_executor_application_handoff":
-            payloads["source-map-selected-executor-application-handoff.json"] = evidence.details
-        elif evidence.source == "source_map_selected_executor_result_checkpoint":
-            payloads["source-map-selected-executor-result-checkpoint.json"] = evidence.details
-        elif evidence.source == "source_map_followthrough_completion_checkpoint":
-            payloads["source-map-followthrough-completion-checkpoint.json"] = evidence.details
-        elif evidence.source == "source_map_terminal_review_package":
-            payloads["source-map-terminal-review-package.json"] = evidence.details
-        elif evidence.source == "source_map_terminal_review_closure_checkpoint":
-            payloads["source-map-terminal-review-closure-checkpoint.json"] = evidence.details
-        elif evidence.source == "source_map_terminal_review_final_audit":
-            payloads["source-map-terminal-review-final-audit.json"] = evidence.details
-        elif evidence.source == "source_map_source_logpoint_install_result":
-            payloads["source-map-source-logpoint-install-result.json"] = evidence.details
-        elif evidence.source == "source_map_debugger_candidates":
-            payloads["source-map-debugger-candidates.json"] = evidence.details
-        elif evidence.source == "source_map_debugger_candidate_selection":
-            payloads["source-map-debugger-candidate-selection.json"] = evidence.details
-        elif evidence.source == "source_map_debugger_execution_result":
-            payloads["source-map-debugger-execution-result.json"] = evidence.details
-        elif evidence.source == "source_map_hook_candidates":
-            payloads["source-map-hook-candidates.json"] = evidence.details
-        elif evidence.source == "source_map_hook_candidate_selection":
-            payloads["source-map-hook-candidate-selection.json"] = evidence.details
-        elif evidence.source == "source_map_hook_install_result":
-            payloads["source-map-hook-install-result.json"] = evidence.details
-        elif evidence.source == "source_map_rebuild_result":
-            payloads["source-map-rebuild-result.json"] = evidence.details
-        elif evidence.source == "source_map_rebuild_generation_result":
-            payloads["source-map-rebuild-generation-result.json"] = evidence.details
-        elif evidence.source == "bundler_symbol_scope":
-            payloads["bundler-symbol-scope.json"] = evidence.details
         elif evidence.source == "source_logpoints":
             payloads["source-logpoints.json"] = evidence.details
         elif evidence.source == "source_logpoint_timeline":
             payloads["source-logpoint-timeline.json"] = evidence.details
-        elif evidence.source == "object_root_mutation_audit":
-            payloads["object-root-mutation-audit.json"] = evidence.details
-        elif evidence.source == "object_graph_diff":
-            payloads["object-graph-diff.json"] = evidence.details
-        elif evidence.source == "runtime_object_graph_diff":
-            payloads["runtime-object-graph-diff.json"] = evidence.details
-        elif evidence.source == "heap_snapshot_readiness":
-            payloads["heap-snapshot-readiness.json"] = evidence.details
-        elif evidence.source == "heap_snapshot_collect":
-            payloads["heap-snapshot-collect.json"] = evidence.details
-        elif evidence.source == "heap_snapshot_diff_readiness":
-            payloads["heap-snapshot-diff-readiness.json"] = evidence.details
-        elif evidence.source == "heap_snapshot_diff_executor_preflight":
-            payloads["heap-snapshot-diff-executor-preflight.json"] = evidence.details
-        elif evidence.source == "heap_snapshot_diff_executor_approval_plan":
-            payloads["heap-snapshot-diff-executor-approval-plan.json"] = evidence.details
-        elif evidence.source == "heap_snapshot_diff_executor_approval_record":
-            payloads["heap-snapshot-diff-executor-approval-record.json"] = evidence.details
-        elif evidence.source == "heap_snapshot_diff_executor_transaction_preflight":
-            payloads["heap-snapshot-diff-executor-transaction-preflight.json"] = evidence.details
-        elif evidence.source == "heap_snapshot_diff_executor_transaction_journal":
-            payloads["heap-snapshot-diff-executor-journal.json"] = evidence.details
-        elif evidence.source == "heap_snapshot_diff_executor_bounded_gate":
-            payloads["heap-snapshot-diff-executor-bounded-gate.json"] = evidence.details
-        elif evidence.source == "heap_snapshot_diff_executor_result":
-            payloads["heap-snapshot-diff-executor-result.json"] = evidence.details
-        elif evidence.source == "heap_snapshot_diff_followup_checkpoint":
-            payloads["heap-snapshot-diff-followup-checkpoint.json"] = evidence.details
-        elif evidence.source == "heap_snapshot_diff_selected_analysis_input_preflight":
-            payloads["heap-snapshot-diff-selected-analysis-input-preflight.json"] = evidence.details
-        elif evidence.source == "heap_snapshot_constructor_growth_drilldown":
-            payloads["heap-snapshot-constructor-growth-drilldown.json"] = evidence.details
-        elif evidence.source == "heap_snapshot_constructor_growth_drilldown_analysis":
-            payloads["heap-snapshot-constructor-growth-drilldown-analysis.json"] = evidence.details
-        elif evidence.source == "heap_snapshot_automatic_followup_plan":
-            payloads["heap-snapshot-automatic-followup-plan.json"] = evidence.details
-        elif evidence.source == "heap_snapshot_retained_size_proof_plan":
-            payloads["heap-snapshot-retained-size-proof-plan.json"] = evidence.details
-        elif evidence.source == "heap_snapshot_path_to_root_proof_plan":
-            payloads["heap-snapshot-path-to-root-proof-plan.json"] = evidence.details
-        elif evidence.source == "heap_snapshot_raw_heap_constructor_drilldown_proof_plan":
-            payloads["heap-snapshot-raw-heap-constructor-drilldown-proof-plan.json"] = evidence.details
-        elif evidence.source == "heap_snapshot_retained_path_preflight":
-            payloads["heap-snapshot-retained-path-preflight.json"] = evidence.details
-        elif evidence.source == "heap_snapshot_retained_size_input_review":
-            payloads["heap-snapshot-retained-size-input-review.json"] = evidence.details
-        elif evidence.source == "heap_snapshot_retained_size_approval_plan":
-            payloads["heap-snapshot-retained-size-approval-plan.json"] = evidence.details
-        elif evidence.source == "heap_snapshot_retained_size_approval_record":
-            payloads["heap-snapshot-retained-size-approval-record.json"] = evidence.details
-        elif evidence.source == "heap_snapshot_retained_size_transaction_preflight":
-            payloads["heap-snapshot-retained-size-transaction-preflight.json"] = evidence.details
-        elif evidence.source == "heap_snapshot_retained_size_transaction_journal":
-            payloads["heap-snapshot-retained-size-executor-journal.json"] = evidence.details
-        elif evidence.source == "heap_snapshot_retained_size_bounded_gate":
-            payloads["heap-snapshot-retained-size-bounded-gate.json"] = evidence.details
-        elif evidence.source == "heap_snapshot_retained_size_analysis":
-            payloads["heap-snapshot-retained-size-analysis.json"] = evidence.details
-        elif evidence.source == "heap_snapshot_path_to_root_analysis":
-            payloads["heap-snapshot-path-to-root-analysis.json"] = evidence.details
         elif evidence.source == "breakpoint_manager":
             payloads["breakpoints.json"] = evidence.details
         elif evidence.source == "debugger_paused":
@@ -1821,120 +750,6 @@ def _extract_workspace_artifact_payloads(final_result: FinalResult) -> dict[str,
             payloads["debugger-session.json"] = evidence.details
         elif evidence.source == "debugger_timeline":
             payloads["debugger-timeline.json"] = evidence.details
-        elif evidence.source == "paused_session_live_continuation_preflight":
-            payloads["paused-session-live-continuation-preflight.json"] = evidence.details
-        elif evidence.source == "paused_session_target_attach_readiness":
-            payloads["paused-session-target-attach-readiness.json"] = evidence.details
-        elif evidence.source == "paused_session_cross_process_execution_plan":
-            payloads["paused-session-cross-process-execution-plan.json"] = evidence.details
-        elif evidence.source == "paused_session_cross_process_session_lifecycle":
-            payloads["paused-session-cross-process-session-lifecycle.json"] = evidence.details
-        elif evidence.source == "paused_session_cross_process_attach_probe":
-            payloads["paused-session-cross-process-attach-probe.json"] = evidence.details
-        elif evidence.source == "paused_session_live_callframe_recovery":
-            payloads["paused-session-live-callframe-recovery.json"] = evidence.details
-        elif evidence.source == "paused_session_cross_process_one_action_execution":
-            payloads["paused-session-cross-process-one-action-execution.json"] = evidence.details
-        elif evidence.source == "paused_session_next_paused_event_capture_plan":
-            payloads["paused-session-next-paused-event-capture-plan.json"] = evidence.details
-        elif evidence.source == "paused_session_next_paused_event_capture_execution":
-            payloads["paused-session-next-paused-event-capture-execution.json"] = evidence.details
-        elif evidence.source == "paused_session_pre_action_subscribe_and_action":
-            payloads["paused-session-pre-action-subscribe-and-action.json"] = evidence.details
-        elif evidence.source == "paused_session_cross_process_continuation_checkpoint":
-            payloads["paused-session-cross-process-continuation-checkpoint.json"] = evidence.details
-        elif evidence.source == "paused_session_multi_step_continuation_workflow":
-            payloads["paused-session-multi-step-continuation-workflow.json"] = evidence.details
-        elif evidence.source == "paused_session_multi_step_continuation_execution":
-            payloads["paused-session-multi-step-continuation-execution.json"] = evidence.details
-        elif evidence.source == "paused_session_multi_step_loop_plan":
-            payloads["paused-session-multi-step-loop-plan.json"] = evidence.details
-        elif evidence.source == "paused_session_multi_step_loop_execution":
-            payloads["paused-session-multi-step-loop-execution.json"] = evidence.details
-        elif evidence.source == "paused_session_automatic_loop_readiness":
-            payloads["paused-session-automatic-loop-readiness.json"] = evidence.details
-        elif evidence.source == "paused_session_automatic_loop_execution_plan":
-            payloads["paused-session-automatic-loop-execution-plan.json"] = evidence.details
-        elif evidence.source == "paused_session_automatic_loop_executor_preflight":
-            payloads["paused-session-automatic-loop-executor-preflight.json"] = evidence.details
-        elif evidence.source == "paused_session_automatic_loop_executor_approval_plan":
-            payloads["paused-session-automatic-loop-executor-approval-plan.json"] = evidence.details
-        elif evidence.source == "paused_session_automatic_loop_executor_approval_record":
-            payloads["paused-session-automatic-loop-executor-approval-record.json"] = evidence.details
-        elif evidence.source == "paused_session_automatic_loop_transaction_preflight":
-            payloads["paused-session-automatic-loop-transaction-preflight.json"] = evidence.details
-        elif evidence.source == "paused_session_automatic_loop_executor_journal":
-            payloads["paused-session-automatic-loop-executor-journal.json"] = evidence.details
-        elif evidence.source == "paused_session_automatic_loop_bounded_executor_gate":
-            payloads["paused-session-automatic-loop-bounded-executor-gate.json"] = evidence.details
-        elif evidence.source == "paused_session_automatic_loop_execution_result":
-            payloads["paused-session-automatic-loop-execution-result.json"] = evidence.details
-        elif evidence.source == "paused_session_automatic_loop_followup_checkpoint":
-            payloads["paused-session-automatic-loop-followup-checkpoint.json"] = evidence.details
-        elif evidence.source == "paused_session_automatic_loop_next_iteration_plan":
-            payloads["paused-session-automatic-loop-next-iteration-plan.json"] = evidence.details
-        elif evidence.source == "paused_session_automatic_loop_next_iteration_execution":
-            payloads["paused-session-automatic-loop-next-iteration-execution.json"] = evidence.details
-        elif evidence.source == "paused_session_automatic_loop_next_iteration_followup_checkpoint":
-            payloads["paused-session-automatic-loop-next-iteration-followup-checkpoint.json"] = evidence.details
-        elif evidence.source == "paused_session_automatic_loop_following_iteration_plan":
-            payloads["paused-session-automatic-loop-following-iteration-plan.json"] = evidence.details
-        elif evidence.source == "paused_session_automatic_loop_multi_iteration_policy":
-            payloads["paused-session-automatic-loop-multi-iteration-policy.json"] = evidence.details
-        elif evidence.source == "paused_session_automatic_loop_multi_iteration_executor_preflight":
-            payloads["paused-session-automatic-loop-multi-iteration-executor-preflight.json"] = evidence.details
-        elif evidence.source == "paused_session_automatic_loop_multi_iteration_execution_plan":
-            payloads["paused-session-automatic-loop-multi-iteration-execution-plan.json"] = evidence.details
-        elif evidence.source == "paused_session_automatic_loop_multi_iteration_executor_approval_plan":
-            payloads["paused-session-automatic-loop-multi-iteration-executor-approval-plan.json"] = evidence.details
-        elif evidence.source == "paused_session_automatic_loop_multi_iteration_executor_approval_record":
-            payloads["paused-session-automatic-loop-multi-iteration-executor-approval-record.json"] = evidence.details
-        elif evidence.source == "paused_session_automatic_loop_multi_iteration_transaction_preflight":
-            payloads["paused-session-automatic-loop-multi-iteration-transaction-preflight.json"] = evidence.details
-        elif evidence.source == "paused_session_automatic_loop_multi_iteration_transaction_journal":
-            payloads["paused-session-automatic-loop-multi-iteration-executor-journal.json"] = evidence.details
-        elif evidence.source == "paused_session_automatic_loop_multi_iteration_bounded_executor_gate":
-            payloads["paused-session-automatic-loop-multi-iteration-bounded-executor-gate.json"] = evidence.details
-        elif evidence.source == "paused_session_automatic_loop_multi_iteration_execution_result":
-            payloads["paused-session-automatic-loop-multi-iteration-execution-result.json"] = evidence.details
-        elif evidence.source == "paused_session_automatic_loop_multi_iteration_followup_checkpoint":
-            payloads["paused-session-automatic-loop-multi-iteration-followup-checkpoint.json"] = evidence.details
-        elif evidence.source == "paused_session_automatic_loop_multi_iteration_next_step_plan":
-            payloads["paused-session-automatic-loop-multi-iteration-next-step-plan.json"] = evidence.details
-        elif evidence.source == "paused_session_automatic_loop_multi_iteration_executor_input_preflight":
-            payloads["paused-session-automatic-loop-multi-iteration-executor-input-preflight.json"] = evidence.details
-        elif evidence.source == "closure_functions":
-            payloads["closure-functions.json"] = evidence.details
-        elif evidence.source == "closure_function_candidates":
-            payloads["closure-function-candidates.json"] = evidence.details
-        elif evidence.source == "closure_wrapper_replacement_plan":
-            payloads["closure-wrapper-replacement-plan.json"] = evidence.details
-        elif evidence.source == "closure_wrapper_assignment_safety":
-            payloads["closure-wrapper-assignment-safety.json"] = evidence.details
-        elif evidence.source == "closure_wrapper_runtime_mutability_preflight":
-            payloads["closure-wrapper-runtime-mutability-preflight.json"] = evidence.details
-        elif evidence.source == "closure_wrapper_runtime_mutability_result":
-            payloads["closure-wrapper-runtime-mutability-result.json"] = evidence.details
-        elif evidence.source == "closure_wrapper_replacement_execution":
-            payloads["closure-wrapper-replacement-execution.json"] = evidence.details
-        elif evidence.source == "closure_wrapper_restore_plan":
-            payloads["closure-wrapper-restore-plan.json"] = evidence.details
-        elif evidence.source == "closure_wrapper_restore_execution":
-            payloads["closure-wrapper-restore-execution.json"] = evidence.details
-        elif evidence.source == "closure_wrapper_events":
-            payloads["closure-wrapper-events.json"] = evidence.details
-        elif evidence.source == "closure_wrapper_continuation_readiness":
-            payloads["closure-wrapper-continuation-readiness.json"] = evidence.details
-        elif evidence.source == "closure_wrapper_continuation_execution_plan":
-            payloads["closure-wrapper-continuation-execution-plan.json"] = evidence.details
-        elif evidence.source == "closure_wrapper_continuation_execution":
-            payloads["closure-wrapper-continuation-execution.json"] = evidence.details
-        elif evidence.source == "closure_wrapper_continuation_checkpoint":
-            payloads["closure-wrapper-continuation-checkpoint.json"] = evidence.details
-        elif evidence.source == "closure_wrapper_continuation_next_iteration_plan":
-            payloads["closure-wrapper-continuation-next-iteration-plan.json"] = evidence.details
-        elif evidence.source == "closure_wrapper_continuation_next_iteration_execution":
-            payloads["closure-wrapper-continuation-next-iteration-execution.json"] = evidence.details
         elif evidence.source == "runtime_context":
             payloads["runtime-context.json"] = evidence.details
         elif evidence.source == "dom_snapshot":
