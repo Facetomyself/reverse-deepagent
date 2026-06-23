@@ -1,4 +1,4 @@
-# Rollout 12-13 综合收尾与项目进度更新（2026-06-22）
+# Rollout 12-14 综合收尾与项目进度更新（2026-06-22/23）
 
 ## 一、rollout 12（4 Worker 并行）+ rollout 13（3 Worker 并行 + 回归修复）
 
@@ -93,9 +93,21 @@ OK (skipped=2)
 4. **worktree 清理**：`.claude/worktrees/` 下有大量历史 worktree 未清理
 5. **Platform Expansion**：Android/iOS/小程序按用户指示暂时不做
 
-## 六、下一轮建议
+## 六、rollout 14（2026-06-23 补）
 
-1. Source Dispatch S4-S7（剩余的 12 个应用分支）
-2. README 收敛（B-6）
-3. B-5 internal-registry 定位
-4. 历史 worktree 清理
+### 派发
+| Worker | 内容 | 结果 |
+|---|---|---|
+| A | Source Dispatch S4: 5 个 dispatcher 分支 → gateway_d | ✅ 316 tests |
+| B | README 收敛: 1,333→187 行，4 个新专题文档 | ✅ |
+
+### S4 之后
+- native_web.py: ~11,834 行，`_dispatch_source` 剩余 7 个 explicit application 分支
+- B-6（README）闭合：README 从 1,333 行缩减至 187 行，详细内容迁移至 4 个 `docs/runtime/` 专题文档
+- 审计 finding 闭合率：**9/12（75%）**
+
+## 七、下一轮建议
+
+1. Source Dispatch S5-S7（剩余的 7 个应用分支）
+2. B-5 internal-registry 定位
+3. 历史 worktree 清理
