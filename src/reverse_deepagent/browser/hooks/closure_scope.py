@@ -11,6 +11,8 @@ from reverse_deepagent.browser.hooks.breakpoints import (
     BreakpointManager,
     BreakpointResult,
     BreakpointSpec,
+)
+from reverse_deepagent.browser.hooks.paused_session import (
     PausedSessionActionSpec,
     PausedSessionMultiStepContinuationExecutionManager,
     PausedSessionMultiStepContinuationExecutionSpec,
