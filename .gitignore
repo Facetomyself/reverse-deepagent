@@ -43,3 +43,4 @@ chrome-*.pid
 
 # Local-only readonly audit report (kept out of VCS per rollout-11 / triage convention)
 docs/status/2026-06-12-readonly-code-audit.md
+.claude/
