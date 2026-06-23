@@ -274,7 +274,7 @@ def create_internal_registry_external_delivery_provider(**kwargs: Any) -> Intern
         headers=kwargs.get("headers", {}),
         auth_token=kwargs.get("auth_token"),
         timeout_seconds=kwargs.get("timeout_seconds", 10.0),
-        approve_internal_registry_delivery=bool(kwargs.get("approve_internal_registry_delivery", False)),
+        approve_internal_registry_delivery=str(kwargs.get("approve_internal_registry_delivery", "false")).lower() in ("true", "1", "yes"),
         http_requester=kwargs.get("http_requester"),
         provider_id=kwargs.get("provider_id", INTERNAL_REGISTRY_EXTERNAL_DELIVERY_PROVIDER_ID),
     )
