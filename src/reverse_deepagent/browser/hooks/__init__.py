@@ -2,6 +2,10 @@ from .breakpoints import (
     BreakpointManager,
     BreakpointResult,
     BreakpointSpec,
+)
+
+
+from .paused_session import (
     PausedSessionActionSpec,
     PausedSessionCrossProcessAttachProbeManager,
     PausedSessionCrossProcessAttachProbeResult,
@@ -103,6 +107,7 @@ from .breakpoints import (
     PausedSessionTargetAttachReadinessResult,
     PausedSessionTargetAttachReadinessSpec,
 )
+
 from .closure_scope import (
     ClosureScopeDiscoveryManager,
     ClosureScopeDiscoveryResult,
