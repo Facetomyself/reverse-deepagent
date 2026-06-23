@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reverse-deepagent-browser-provider-hosted-cdp-template"
+version = "0.1.0"
+description = "Hosted CDP BrowserProvider plugin template for reverse-deepagent."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "reverse-deepagent==0.1.0",
+]
+
+[project.entry-points."reverse_deepagent.browser_providers"]
+hosted-cdp-template = "reverse_deepagent_browser_provider_hosted_cdp_template:browser_provider_registration"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -31,6 +31,14 @@ class FakeCDPSession:
         return {}
 
 
+class FakeNetworkUnavailableCDPSession(FakeCDPSession):
+    def send(self, method, params=None):
+        if method == "Network.enable":
+            self.calls.append((method, params or {}))
+            raise RuntimeError("Network domain unavailable")
+        return super().send(method, params)
+
+
 class FakeCDPPage:
     url = "https://example.test/app"
 
@@ -60,6 +68,11 @@ class FakeCDPPage:
                 "decodedBodySize": 64,
             }
         ]
+
+
+class FakeNetworkUnavailableCDPPage(FakeCDPPage):
+    def __init__(self) -> None:
+        self.session = FakeNetworkUnavailableCDPSession()
 
 
 class CDPEnhancedCollectorTests(unittest.TestCase):
@@ -96,6 +109,9 @@ class CDPEnhancedCollectorTests(unittest.TestCase):
         self.assertIn("buildSign", payload["script_sources"]["items"][1]["sourcePreview"])
         self.assertEqual(payload["script_sources"]["items"][1]["fallback"], "html_script_inventory")
         self.assertEqual(payload["websocket_frames"]["status"], "unsupported")
+        self.assertEqual(payload["websocket_frames"]["reason"], "websocket_event_cache_required_before_navigation")
+        self.assertFalse(payload["websocket_frames"]["historical_replay_supported"])
+        self.assertEqual(payload["websocket_frames"]["capture_window"], "post_attach_only")
         self.assertIn(("Network.getResponseBody", {"requestId": "req-1"}), page.session.calls)
 
     def test_event_cache_collects_request_script_and_websocket_events(self) -> None:
@@ -128,7 +144,25 @@ class CDPEnhancedCollectorTests(unittest.TestCase):
         self.assertEqual(snapshot["script_sources"]["status"], "success")
         self.assertIn("buildSign", snapshot["script_sources"]["items"][0]["sourcePreview"])
         self.assertEqual(snapshot["websocket_frames"]["status"], "success")
+        self.assertEqual(snapshot["websocket_frames"]["source"], "cdp_event_cache")
+        self.assertEqual(snapshot["websocket_frames"]["capture_window"], "post_attach_only")
+        self.assertFalse(snapshot["websocket_frames"]["historical_replay_supported"])
         self.assertEqual(snapshot["websocket_frames"]["items"][0]["payloadPreview"], "hello")
+
+    def test_event_cache_empty_websocket_bucket_reports_presubscription_window(self) -> None:
+        page = FakeCDPPage()
+        cache = CDPEventCacheCollector()
+        self.assertTrue(cache.attach(page))
+        snapshot = cache.snapshot()
+        websocket_frames = snapshot["websocket_frames"]
+        self.assertEqual(websocket_frames["status"], "unsupported")
+        self.assertEqual(websocket_frames["reason"], "no_websocket_frame_events")
+        self.assertEqual(websocket_frames["source"], "cdp_event_cache")
+        self.assertTrue(websocket_frames["event_subscription_required"])
+        self.assertEqual(websocket_frames["subscribed_events"], ["Network.webSocketFrameSent", "Network.webSocketFrameReceived"])
+        self.assertEqual(websocket_frames["capture_window"], "post_attach_only")
+        self.assertFalse(websocket_frames["historical_replay_supported"])
+        self.assertTrue(websocket_frames["missed_frames_possible"])
 
     def test_enhanced_collector_prefers_event_cache_over_performance_fallback(self) -> None:
         page = FakeCDPPage()
@@ -142,6 +176,21 @@ class CDPEnhancedCollectorTests(unittest.TestCase):
         self.assertEqual(payload["response_bodies"]["status"], "success")
         self.assertEqual(payload["script_sources"]["status"], "success")
         self.assertEqual(payload["websocket_frames"]["status"], "success")
+
+    def test_enhanced_collector_reports_empty_attached_event_cache_without_not_implemented_placeholder(self) -> None:
+        page = FakeCDPPage()
+        cache = CDPEventCacheCollector()
+        self.assertTrue(cache.attach(page))
+        payload = CDPEnhancedCollector().collect(page, {"requests": []}, cache.snapshot())
+        websocket_frames = payload["websocket_frames"]
+        self.assertEqual(websocket_frames["status"], "unsupported")
+        self.assertEqual(websocket_frames["reason"], "websocket_event_cache_attached_no_frames_observed")
+        self.assertEqual(websocket_frames["source"], "cdp_event_cache_diagnostics")
+        self.assertEqual(websocket_frames["event_cache_status"]["attached"], True)
+        self.assertEqual(websocket_frames["event_cache_status"]["supported"], True)
+        self.assertFalse(websocket_frames["historical_replay_supported"])
+        self.assertFalse(websocket_frames["calls_mcp"])
+        self.assertFalse(websocket_frames["mobile_runtime_used"])
 
     def test_enhanced_collector_uses_hook_timeline_for_websocket_frame_fallback(self) -> None:
         page = FakeCDPPage()
@@ -165,6 +214,15 @@ class CDPEnhancedCollectorTests(unittest.TestCase):
         self.assertEqual(payload["websocket_frames"]["status"], "success")
         self.assertEqual(payload["websocket_frames"]["source"], "runtime_hook_timeline")
         self.assertEqual(payload["websocket_frames"]["items"][0]["payloadPreview"], "hello")
+
+    def test_enhanced_collector_reports_network_domain_unavailable_for_websocket_diagnostics(self) -> None:
+        page = FakeNetworkUnavailableCDPPage()
+        payload = CDPEnhancedCollector().collect(page, {"requests": []}, {}, {})
+        websocket_frames = payload["websocket_frames"]
+        self.assertEqual(websocket_frames["status"], "unsupported")
+        self.assertEqual(websocket_frames["reason"], "network_domain_unavailable")
+        self.assertEqual(websocket_frames["source"], "cdp_event_cache_diagnostics")
+        self.assertFalse(websocket_frames["historical_replay_supported"])
 
 
 if __name__ == "__main__":

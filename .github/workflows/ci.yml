@@ -25,6 +25,48 @@ jobs:
           python -m pip install -e .
       - name: Run unit tests
         run: python -m unittest discover -s tests -v
+      - name: BrowserProvider smoke policy gate regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture_root="tests/fixtures/browser-provider-smoke"
+          metadata_smoke="$fixture_root/cloakbrowser-metadata-only.json"
+          launch_smoke="$fixture_root/cloakbrowser-launch-smoke.json"
+          tmpdir="$(mktemp -d)"
+          python -m json.tool "$metadata_smoke" >/dev/null
+          python -m json.tool "$launch_smoke" >/dev/null
+          set +e
+          reverse-agent-browser-provider-smoke-policy \
+            --smoke-json "$metadata_smoke" \
+            --expected-provider cloakbrowser \
+            --minimum-evidence-level launch-smoke \
+            > "$tmpdir/metadata-review.json"
+          rc=$?
+          set -e
+          test "$rc" -eq 2
+          python - <<'PY_CHECK' "$tmpdir/metadata-review.json"
+          import json, sys
+          payload = json.load(open(sys.argv[1], encoding="utf-8"))
+          assert payload["ok"] is False
+          assert payload["policy_decision"]["decision"] == "block"
+          assert "insufficient_browser_provider_smoke_evidence_level" in payload["policy_decision"]["blockers"]
+          assert payload["side_effect_policy"]["starts_browser"] is False
+          assert payload["side_effect_policy"]["calls_mcp"] is False
+          PY_CHECK
+          reverse-agent-browser-provider-smoke-policy \
+            --smoke-json "$launch_smoke" \
+            --expected-provider cloakbrowser \
+            --minimum-evidence-level launch-smoke \
+            > "$tmpdir/launch-review.json"
+          python - <<'PY_CHECK' "$tmpdir/launch-review.json"
+          import json, sys
+          payload = json.load(open(sys.argv[1], encoding="utf-8"))
+          assert payload["ok"] is True
+          assert payload["policy_decision"]["decision"] == "pass"
+          assert payload["attachment_acceptance"]["runtime_launch_smoke_accepted"] is True
+          assert payload["side_effect_policy"]["starts_browser"] is False
+          assert payload["side_effect_policy"]["calls_mcp"] is False
+          PY_CHECK
 
   package-smoke:
     runs-on: macos-latest
@@ -57,6 +99,7 @@ jobs:
             --profile base64 \
             --runtime mock \
             --artifact-root "$RUNNER_TEMP/reverse-agent-fixture-smoke"
+          "$VENV/bin/reverse-agent-browser-provider-smoke-policy" --help >/dev/null
       - name: Verify packaged resources
         run: |
           VENV="$RUNNER_TEMP/reverse-agent-wheel-venv"

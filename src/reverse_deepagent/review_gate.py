@@ -36,6 +36,16 @@ class ReviewGateResult(SchemaBaseModel):
         default_factory=list,
         description="Structured evidence-level review requirements surfaced by evidence promotion.",
     )
+    strategy_evidence_score: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Advisory strategy / rebuild evidence score consumed by the review gate, if present.",
+    )
+    strategy_evidence_score_label: str | None = Field(default=None, description="Strategy evidence score label, if present.")
+    strategy_evidence_score_value: float | None = Field(default=None, description="Normalized strategy evidence score value, if present.")
+    strategy_evidence_score_blockers: list[str] = Field(
+        default_factory=list,
+        description="Strategy evidence score blockers surfaced for review-gate decisions.",
+    )
     reasons: list[str] = Field(default_factory=list, description="Human-readable reasons for the gate outcome.")
     next_action: str = Field(description="Recommended action after evaluating the gate.")
 
@@ -69,6 +79,11 @@ def evaluate_review_gate(
     evidence_review_required_count = int(evidence_summary.get("review_required_count") or 0)
     evidence_review_required_codes = _string_list(evidence_summary.get("review_required_codes"))
     evidence_review_required_items = _dict_list(evidence_summary.get("review_required_items"))
+    strategy_evidence_score = _strategy_evidence_score(plan)
+    strategy_evidence_score_label = _optional_string(strategy_evidence_score.get("label"))
+    strategy_evidence_score_value = _optional_float(strategy_evidence_score.get("score"))
+    strategy_evidence_score_blockers = _string_list(strategy_evidence_score.get("blockers"))
+    strategy_evidence_score_next_action = _optional_string(strategy_evidence_score.get("recommended_next_action"))
 
     reasons: list[str] = []
     if not ready:
@@ -87,6 +102,17 @@ def evaluate_review_gate(
             reasons.extend(evidence_review_required_codes)
     if warning_codes:
         reasons.append("warning_review_hints_present")
+    if strategy_evidence_score:
+        reasons.append("strategy_evidence_score_present")
+        if strategy_evidence_score_blockers:
+            reasons.append("strategy_evidence_score_blockers_present")
+            reasons.extend(f"strategy_evidence_score:{item}" for item in strategy_evidence_score_blockers)
+        if strategy_evidence_score_label in {"runtime_assisted_required", "needs_more_evidence"}:
+            reasons.append(f"strategy_evidence_score_label={strategy_evidence_score_label}")
+        elif strategy_evidence_score_label == "reviewable_candidate":
+            reasons.append("strategy_evidence_score_reviewable_candidate")
+        if strategy_evidence_score_value is not None and strategy_evidence_score_value < 0.62:
+            reasons.append("strategy_evidence_score_below_review_threshold")
 
     blocked = bool(risk_codes) or not ready
     if evidence_promotion is not None and evidence_counts["validated"] <= 0:
@@ -98,15 +124,33 @@ def evaluate_review_gate(
         # Review-gated evidence such as pending flow stitch proposals must not be
         # treated as confirmed delivery evidence until a reviewer approves it.
         blocked = True
+    score_blocks_delivery = bool(
+        strategy_evidence_score
+        and (
+            strategy_evidence_score_blockers
+            or strategy_evidence_score_label in {"runtime_assisted_required", "needs_more_evidence"}
+            or (strategy_evidence_score_value is not None and strategy_evidence_score_value < 0.62)
+        )
+    )
+    if score_blocks_delivery:
+        blocked = True
+    score_requires_manual_review = bool(strategy_evidence_score and strategy_evidence_score_label == "reviewable_candidate")
     if blocked:
         status: ReviewGateStatus = "block"
         if evidence_review_required_count > 0:
             next_action = "review_stitch_proposals_before_delivery"
+        elif score_blocks_delivery and strategy_evidence_score_next_action:
+            next_action = strategy_evidence_score_next_action
+        elif score_blocks_delivery:
+            next_action = "expand_strategy_evidence_before_delivery"
         else:
             next_action = "manual_review_or_expand_evidence"
-    elif warning_codes or (evidence_promotion is not None and evidence_counts["rejected"] > 0):
+    elif warning_codes or score_requires_manual_review or (evidence_promotion is not None and evidence_counts["rejected"] > 0):
         status = "warn"
-        next_action = "manual_review_before_delivery"
+        if score_requires_manual_review and strategy_evidence_score_next_action:
+            next_action = strategy_evidence_score_next_action
+        else:
+            next_action = "manual_review_before_delivery"
     else:
         status = "pass"
         reasons.append("ready_without_blocking_review_hints")
@@ -126,6 +170,10 @@ def evaluate_review_gate(
         evidence_review_required_count=evidence_review_required_count,
         evidence_review_required_codes=evidence_review_required_codes,
         evidence_review_required_items=evidence_review_required_items,
+        strategy_evidence_score=strategy_evidence_score,
+        strategy_evidence_score_label=strategy_evidence_score_label,
+        strategy_evidence_score_value=strategy_evidence_score_value,
+        strategy_evidence_score_blockers=strategy_evidence_score_blockers,
         reasons=_dedupe(reasons),
         next_action=next_action,
     )
@@ -156,6 +204,35 @@ def _coerce_review_hints(payload: Any) -> list[ReviewHint]:
             )
     return hints
 
+
+def _strategy_evidence_score(plan: dict[str, Any]) -> dict[str, Any]:
+    payload = plan.get("evidence_score")
+    if isinstance(payload, dict):
+        return payload
+    payload = plan.get("strategy_evidence_score")
+    if isinstance(payload, dict):
+        return payload
+    strategy = plan.get("strategy")
+    if isinstance(strategy, dict) and isinstance(strategy.get("evidence_score"), dict):
+        return strategy["evidence_score"]
+    return {}
+
+
+def _optional_string(payload: Any) -> str | None:
+    if payload is None:
+        return None
+    value = str(payload).strip()
+    return value or None
+
+
+def _optional_float(payload: Any) -> float | None:
+    if payload is None:
+        return None
+    try:
+        value = float(payload)
+    except (TypeError, ValueError):
+        return None
+    return max(0.0, min(1.0, value))
 
 def _string_list(payload: Any) -> list[str]:
     if not isinstance(payload, list):

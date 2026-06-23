@@ -4,6 +4,21 @@ set -euo pipefail
 DEBUG_PORT="${DEBUG_PORT:-9222}"
 USER_DATA_DIR="${USER_DATA_DIR:-${HOME}/.codex/browser-profiles/chrome-jsreverser}"
 STATE_DIR="${STATE_DIR:-${HOME}/.codex/run/reverse-deepagent}"
+
+validate_port() {
+  local value="$1"
+  if [[ ! "$value" =~ ^[0-9]+$ ]]; then
+    echo "DEBUG_PORT must be an integer in the range 1..65535: $value" >&2
+    exit 2
+  fi
+  if (( value < 1 || value > 65535 )); then
+    echo "DEBUG_PORT must be in the range 1..65535: $value" >&2
+    exit 2
+  fi
+}
+
+validate_port "$DEBUG_PORT"
+
 PID_FILE="${PID_FILE:-$STATE_DIR/chrome-$DEBUG_PORT.pid}"
 OWNERSHIP_FILE="${OWNERSHIP_FILE:-$STATE_DIR/chrome-$DEBUG_PORT.managed}"
 

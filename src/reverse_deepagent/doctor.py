@@ -9,10 +9,11 @@ import socket
 import sys
 from pathlib import Path
 from typing import Any, Sequence
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlsplit, urlunsplit
 
 from reverse_deepagent.adapters.native_web import create_native_web_runtime
 from reverse_deepagent.browser import BROWSER_PROVIDER_ENTRY_POINT_GROUP, build_default_browser_provider_registry
+from reverse_deepagent.browser_provider_smoke import build_launch_command_payload
 from reverse_deepagent.browser.smoke import (
     DEFAULT_BROWSER_PROVIDER_MATRIX,
     browser_provider_metadata_matrix_payload,
@@ -73,6 +74,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--launch-browser-smoke", action="store_true", help="Actually launch the selected BrowserProvider and open --browser-smoke-url. Disabled by default.")
     parser.add_argument("--browser-smoke-url", default="about:blank", help="URL used only when --launch-browser-smoke is set.")
     parser.add_argument(
+        "--print-browser-launch-command",
+        action="store_true",
+        help=(
+            "Emit a redaction-safe explicit BrowserProvider launch-smoke command plan without "
+            "resolving provider registrations, invoking provider factories, checking availability, "
+            "launching browsers, probing CDP endpoints, writing artifacts, or calling MCP."
+        ),
+    )
+    parser.add_argument(
         "--external-delivery-providers",
         action="store_true",
         help="Emit a side-effect-free ExternalDeliveryProvider metadata matrix without invoking provider factories.",
@@ -125,13 +135,13 @@ def _port_status(browser_url: str) -> dict[str, Any]:
             listening = True
     except OSError as exc:
         error = str(exc)
-    return {"browser_url": browser_url, "host": host, "port": port, "listening": listening, "error": error}
+    return {"browser_url": _redact_url(browser_url), "host": host, "port": port, "listening": listening, "error": error}
 
 
 def _skipped_port_status(browser_url: str, reason: str) -> dict[str, Any]:
     parsed = urlparse(browser_url)
     return {
-        "browser_url": browser_url,
+        "browser_url": _redact_url(browser_url),
         "host": parsed.hostname or "127.0.0.1",
         "port": parsed.port or (443 if parsed.scheme == "https" else 80),
         "listening": None,
@@ -141,11 +151,23 @@ def _skipped_port_status(browser_url: str, reason: str) -> dict[str, Any]:
     }
 
 
+def _redact_url(url: str) -> str:
+    parts = urlsplit(str(url))
+    if not parts.username and not parts.password:
+        return str(url)
+    host = parts.hostname or ""
+    if parts.port is not None:
+        host = f"{host}:{parts.port}"
+    return urlunsplit((parts.scheme, host, parts.path, parts.query, parts.fragment))
+
+
 def _console_script_status() -> dict[str, Any]:
     scripts = {
         "reverse-agent-demo": shutil.which("reverse-agent-demo"),
         "reverse-agent-fixture-smoke": shutil.which("reverse-agent-fixture-smoke"),
         "reverse-agent-openai-smoke": shutil.which("reverse-agent-openai-smoke"),
+        "reverse-agent-workspace-dual-write-smoke": shutil.which("reverse-agent-workspace-dual-write-smoke"),
+        "reverse-agent-browser-provider-smoke": shutil.which("reverse-agent-browser-provider-smoke"),
         "reverse-agent-doctor": shutil.which("reverse-agent-doctor"),
     }
     local_bin = DEFAULT_REPO_ROOT / ".venv/bin"
@@ -233,6 +255,38 @@ def _browser_provider_kwargs(args: argparse.Namespace) -> dict[str, Any]:
         "browser_timezone": args.browser_timezone,
         "request_timeout": args.request_timeout,
     }
+
+
+def _browser_provider_launch_command(args: argparse.Namespace) -> dict[str, Any]:
+    try:
+        provider_kwargs = _browser_provider_kwargs(args)
+    except Exception as exc:
+        return {
+            "schema_version": "reverse-deepagent.browser-provider-launch-command.v1",
+            "mode": "print-launch-command",
+            "ok": False,
+            "requested_provider_id": args.browser or "playwright-chromium",
+            "error": str(exc),
+            "side_effect_policy": {
+                "metadata_only_by_default": True,
+                "provider_registry_resolved": False,
+                "availability_check_requested": False,
+                "launch_smoke_requested": False,
+                "provider_factories_invoked": False,
+                "starts_browser": False,
+                "writes_artifact": False,
+                "calls_mcp": False,
+                "touches_mobile_full_runtime_chains": False,
+                "prints_command_only": True,
+            },
+            "next_action": "fix_browser_provider_launch_command_args",
+        }
+    return build_launch_command_payload(
+        browser=args.browser or "playwright-chromium",
+        artifact_root=DEFAULT_REPO_ROOT / "artifacts" / "browser-provider-smoke",
+        smoke_url=args.browser_smoke_url,
+        provider_kwargs=provider_kwargs,
+    )
 
 
 def _external_delivery_provider_matrix() -> dict[str, Any]:
@@ -382,8 +436,9 @@ def run_doctor(args: argparse.Namespace) -> dict[str, Any]:
     check_external_delivery_providers = bool(getattr(args, "external_delivery_providers", False))
     check_runtime_backends = bool(getattr(args, "runtime_backends", False))
     check_delivery_transaction = bool(getattr(args, "delivery_transaction_root", None))
+    print_browser_launch_command = bool(getattr(args, "print_browser_launch_command", False))
     check_browser_provider = bool(
-        args.browser
+        (args.browser and not print_browser_launch_command)
         or (
             not args.ensure_chrome
             and not check_legacy_mcp
@@ -391,10 +446,17 @@ def run_doctor(args: argparse.Namespace) -> dict[str, Any]:
             and not check_external_delivery_providers
             and not check_runtime_backends
             and not check_delivery_transaction
+            and not print_browser_launch_command
         )
     )
     metadata_only_check = bool(
-        (check_provider_matrix or check_external_delivery_providers or check_runtime_backends or check_delivery_transaction)
+        (
+            check_provider_matrix
+            or check_external_delivery_providers
+            or check_runtime_backends
+            or check_delivery_transaction
+            or print_browser_launch_command
+        )
         and not check_browser_provider
         and not args.ensure_chrome
         and not check_legacy_mcp
@@ -409,7 +471,7 @@ def run_doctor(args: argparse.Namespace) -> dict[str, Any]:
             "path": _path_check(args.chrome_path),
             "start_script": _path_check(args.chrome_start_script),
             "stop_script": _path_check(args.chrome_stop_script),
-            "browser_url": args.browser_url,
+            "browser_url": _redact_url(args.browser_url),
         },
         "mcp": {
             "command": _command_check(args.jsreverser_mcp_command),
@@ -439,6 +501,9 @@ def run_doctor(args: argparse.Namespace) -> dict[str, Any]:
     if check_delivery_transaction:
         payload["delivery_transaction"] = inspect_delivery_transaction_root(args.delivery_transaction_root).to_dict()
 
+    if print_browser_launch_command:
+        payload["browser_provider_launch_command"] = _browser_provider_launch_command(args)
+
     if check_browser_provider:
         payload["browser_provider"] = _check_browser_provider(args)
 
@@ -464,6 +529,8 @@ def run_doctor(args: argparse.Namespace) -> dict[str, Any]:
             required_ok.append(bool(payload.get("runtime_backend_matrix", {}).get("ok")))
         if check_delivery_transaction:
             required_ok.append(bool(payload.get("delivery_transaction", {}).get("ok")))
+        if print_browser_launch_command:
+            required_ok.append(bool(payload.get("browser_provider_launch_command", {}).get("ok")))
     else:
         required_ok = [
             payload["chrome"]["path"]["exists"],
@@ -483,6 +550,8 @@ def run_doctor(args: argparse.Namespace) -> dict[str, Any]:
             required_ok.append(bool(payload.get("runtime_backend_matrix", {}).get("ok")))
         if check_delivery_transaction:
             required_ok.append(bool(payload.get("delivery_transaction", {}).get("ok")))
+        if print_browser_launch_command:
+            required_ok.append(bool(payload.get("browser_provider_launch_command", {}).get("ok")))
         if check_legacy_mcp:
             required_ok.append(bool(payload.get("legacy_mcp_check", {}).get("ok")))
     payload["ok"] = all(required_ok)

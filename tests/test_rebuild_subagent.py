@@ -4,9 +4,9 @@ import unittest
 from pathlib import Path
 
 from reverse_deepagent.agent import build_reverse_agent
-from reverse_deepagent.schemas import ArtifactKind, ArtifactRef, ExecutionStatus, RebuildResult
+from reverse_deepagent.schemas import ArtifactKind, ArtifactRef, ExecutionStatus, FinalResult, RebuildResult, ReverseMode, ReverseStage, TaskCard
 from reverse_deepagent.subagents.rebuild import REBUILD_SUBAGENT_DESCRIPTION, REBUILD_SUBAGENT_NAME, build_rebuild_subagent, load_rebuild_prompt
-from reverse_deepagent.tools.rebuild_tools import make_review_rebuild_artifacts_tool
+from reverse_deepagent.tools.rebuild_tools import make_build_rebuild_delivery_tool, make_review_rebuild_artifacts_tool
 
 
 class ToolFriendlyFakeModel:
@@ -88,6 +88,80 @@ class RebuildSubagentTests(unittest.TestCase):
         self.assertIn("rebuild_plan_not_ready", result["warnings"])
         self.assertEqual(result["next_action"], "manual_port_or_expand_source_context")
 
+
+    def test_review_rebuild_artifacts_reads_artifact_refs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_root = Path(tmp) / "artifacts"
+            workspace = artifact_root / "workspace"
+            workspace.mkdir(parents=True)
+            rebuild = RebuildResult(
+                status=ExecutionStatus.SUCCESS,
+                rebuild_plan={"ready": True, "review_hints": []},
+                generated_files={"rebuild_plan": "/tmp/rebuild-plan.json"},
+                artifacts=[ArtifactRef(path="/tmp/rebuild-plan.json", kind=ArtifactKind.JSON, description="plan")],
+                next_action="run_replay_demo_or_integrate_scrapy",
+            )
+            plan = {"ready": True, "entrypoint": "buildSign", "review_hints": []}
+            (workspace / "rebuild-result.json").write_text(rebuild.model_dump_json(), encoding="utf-8")
+            (workspace / "rebuild-plan.json").write_text(json.dumps(plan), encoding="utf-8")
+
+            result = make_review_rebuild_artifacts_tool(artifact_root)(
+                rebuild_result_artifact_ref="workspace/rebuild-result.json",
+                rebuild_plan_artifact_ref="workspace_rebuild_plan",
+            )
+
+            self.assertEqual(result["status"], "pass")
+            self.assertEqual(result["summary"]["entrypoint"], "buildSign")
+            self.assertEqual(result["artifact_input"]["rebuild_plan"]["artifact_ref"], "workspace_rebuild_plan")
+            self.assertTrue(result["side_effect_policy"]["read_only"])
+
+    def test_build_rebuild_delivery_reads_task_and_final_artifact_refs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_root = Path(tmp) / "artifacts"
+            workspace = artifact_root / "workspace"
+            workspace.mkdir(parents=True)
+            task_card = TaskCard(
+                target_url_or_file="https://example.test/app",
+                target_param_or_api="sign",
+                goal="生成 rebuild",
+                boundaries="unit test",
+            )
+            final_result = FinalResult(
+                task_card=task_card,
+                mode=ReverseMode.FIND_ENTRY,
+                stage=ReverseStage.FINAL,
+                status=ExecutionStatus.PARTIAL,
+                next_action="manual_port_or_expand_source_context",
+            )
+            (workspace / "task-card.json").write_text(task_card.model_dump_json(), encoding="utf-8")
+            (workspace / "final-result.json").write_text(final_result.model_dump_json(), encoding="utf-8")
+
+            result = make_build_rebuild_delivery_tool(artifact_root)(
+                task_card_artifact_ref="workspace_task_card",
+                final_result_artifact_ref="virtual://workspace/delivery/final-result.json",
+            )
+
+            self.assertEqual(result["status"], "partial")
+            self.assertEqual(result["artifact_input"]["task_card"]["artifact_ref"], "workspace_task_card")
+            self.assertEqual(result["artifact_input"]["final_result"]["resolver_metrics"]["artifact_ref_kind"], "virtual-uri")
+            self.assertTrue((workspace / "rebuild-plan.json").exists())
+            self.assertTrue((artifact_root / "rebuild" / "README.md").exists())
+
+    def test_build_rebuild_delivery_rejects_ambiguous_json_and_artifact_ref(self) -> None:
+        task_card = TaskCard(
+            target_url_or_file="https://example.test/app",
+            target_param_or_api="sign",
+            goal="生成 rebuild",
+            boundaries="unit test",
+        )
+
+        with self.assertRaisesRegex(ValueError, "mutually exclusive"):
+            make_build_rebuild_delivery_tool("artifacts")(
+                task_card_json=task_card.model_dump_json(),
+                task_card_artifact_ref="workspace_task_card",
+                final_result_json="{}",
+            )
+
     def test_build_rebuild_subagent_exposes_build_and_review_tools(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             subagent = build_rebuild_subagent(Path(tmp) / "artifacts")
@@ -95,7 +169,7 @@ class RebuildSubagentTests(unittest.TestCase):
         self.assertEqual(subagent["name"], REBUILD_SUBAGENT_NAME)
         self.assertEqual(subagent["description"], REBUILD_SUBAGENT_DESCRIPTION)
         self.assertIn("Rebuild Subagent", subagent["system_prompt"])
-        self.assertEqual({tool.__name__ for tool in subagent["tools"]}, {"build_rebuild_delivery", "review_rebuild_artifacts"})
+        self.assertEqual({tool.__name__ for tool in subagent["tools"]}, {"read_workspace_artifact", "build_rebuild_delivery", "review_rebuild_artifacts"})
 
     def test_prompt_loader_supports_custom_path(self) -> None:
         path = Path(__file__).resolve().parents[1] / "src/reverse_deepagent/prompts/rebuild.txt"
@@ -122,6 +196,46 @@ class RebuildSubagentTests(unittest.TestCase):
         self.assertIn("delivery", names)
         self.assertLess(names.index("review"), names.index("rebuild"))
         self.assertLess(names.index("rebuild"), names.index("delivery"))
+        tool_names = {tool.__name__ for tool in captured["tools"]}
+        self.assertIn("read_workspace_artifact", tool_names)
+        self.assertIn("audit_workspace_artifact_consumers", tool_names)
+        self.assertIn("assess_workspace_migration_readiness", tool_names)
+        self.assertIn("assess_workspace_consumer_readiness_score", tool_names)
+        self.assertIn("plan_workspace_dual_write_expansion", tool_names)
+        self.assertIn("review_workspace_dual_write_expansion_workflow", tool_names)
+        self.assertIn("record_workspace_dual_write_expansion_result", tool_names)
+        self.assertIn("plan_workspace_foldered_canonical_migration_pilot", tool_names)
+        self.assertIn("review_workspace_foldered_canonical_migration_preflight", tool_names)
+        self.assertIn("plan_workspace_foldered_canonical_migration_apply", tool_names)
+        self.assertIn("plan_workspace_foldered_canonical_migration_approval", tool_names)
+        self.assertIn("review_workspace_foldered_canonical_migration_manifest_dry_run", tool_names)
+        self.assertIn("review_workspace_foldered_canonical_migration_post_apply_validation", tool_names)
+        self.assertIn("review_workspace_foldered_canonical_migration_physical_apply_preflight", tool_names)
+        self.assertIn("execute_workspace_foldered_canonical_physical_apply", tool_names)
+        self.assertIn("record_workspace_foldered_canonical_migration_post_apply_validation_result", tool_names)
+        self.assertIn("review_workspace_foldered_canonical_legacy_fallback_tightening_readiness", tool_names)
+        self.assertIn("plan_workspace_foldered_canonical_legacy_fallback_tightening", tool_names)
+        self.assertIn("review_workspace_foldered_canonical_legacy_fallback_tightening_preflight", tool_names)
+        self.assertIn("execute_workspace_foldered_canonical_legacy_fallback_tightening", tool_names)
+        self.assertIn("review_workspace_foldered_canonical_migration_finalization_readiness", tool_names)
+        self.assertIn("plan_workspace_foldered_canonical_migration_finalization", tool_names)
+        self.assertIn("review_workspace_foldered_canonical_migration_finalization_preflight", tool_names)
+        self.assertIn("execute_workspace_foldered_canonical_migration_finalization", tool_names)
+        self.assertIn("review_workspace_foldered_canonical_migration_post_finalization_audit", tool_names)
+        self.assertIn("review_workspace_foldered_canonical_broader_rollout_readiness", tool_names)
+        self.assertIn("plan_workspace_foldered_canonical_broader_rollout", tool_names)
+        self.assertIn("review_workspace_foldered_canonical_broader_rollout_preflight", tool_names)
+        self.assertIn("execute_workspace_foldered_canonical_broader_rollout", tool_names)
+        self.assertIn("review_workspace_foldered_canonical_broader_rollout_post_audit", tool_names)
+        self.assertIn("plan_workspace_foldered_canonical_broader_rollout_rollback_decision", tool_names)
+        self.assertIn("record_workspace_foldered_canonical_broader_rollout_decision", tool_names)
+        self.assertIn("execute_workspace_foldered_canonical_broader_rollout_commit", tool_names)
+        self.assertIn("review_workspace_foldered_canonical_broader_rollout_rollback_preflight", tool_names)
+        self.assertIn("execute_workspace_foldered_canonical_broader_rollout_rollback", tool_names)
+        self.assertIn("plan_workspace_dual_write_pilot", tool_names)
+        self.assertIn("review_workspace_dual_write_pilot_workflow", tool_names)
+        self.assertIn("record_workspace_dual_write_pilot_result", tool_names)
+        self.assertIn("build_rebuild_delivery", tool_names)
 
 
 if __name__ == "__main__":

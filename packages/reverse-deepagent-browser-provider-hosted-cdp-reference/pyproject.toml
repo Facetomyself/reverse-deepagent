@@ -1,0 +1,15 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "reverse-deepagent-browser-provider-hosted-cdp-reference"
+version = "0.1.0"
+description = "Reference hosted CDP BrowserProvider plugin with allocation, attach, and release lifecycle semantics."
+requires-python = ">=3.11"
+dependencies = [
+  "reverse-deepagent==0.1.0",
+]
+
+[project.entry-points."reverse_deepagent.browser_providers"]
+hosted-cdp-reference = "reverse_deepagent_browser_provider_hosted_cdp_reference:browser_provider_registration"

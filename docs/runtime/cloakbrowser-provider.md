@@ -81,7 +81,7 @@ reverse-agent-demo \
   --task-text "https://example.com 检查 cf 验证状态"
 ```
 
-provider capability metadata 会将 proxy 脱敏为 `<configured>`。
+provider capability metadata 会将 proxy 脱敏为 `<configured>`。`reverse-agent-browser-provider-smoke` 还会在 `workspace/browser-provider-smoke.json` 写入 redaction-safe `requested_provider_config`：`browser_url` 会移除用户名 / 密码，profile / executable 只保留 basename，proxy 固定为 `<configured>`，高风险 browser args 会被 `<redacted>` 替换。
 
 ## 4. 当前实现状态
 
@@ -94,6 +94,8 @@ provider capability metadata 会将 proxy 脱敏为 `<configured>`。
 | connect 模式 | 已实现 baseline | 传入 `--browser-url` / `browser_url` 后通过 Playwright `connect_over_cdp` 连接已有 CloakBrowser / cloakserve CDP endpoint；不负责启动远端进程。 |
 | native collectors 复用 | 已接入运行时工厂 | collector 仍由 `NativeWebRuntime` 统一驱动。 |
 | doctor 支持 | 已实现 metadata / dependency 检查 | `reverse-agent-doctor --browser cloakbrowser` 默认不启动浏览器。 |
+| doctor launch command plan | 已实现 side-effect-free review payload | `reverse-agent-doctor --print-browser-launch-command` 只打印显式 launch-smoke 命令计划，不 resolve provider、不检查 availability、不启动浏览器、不写 artifact。 |
+| smoke evidence 配置摘要 | 已实现 | metadata-only / availability / launch-smoke 都会写入脱敏 `requested_provider_config` 和 `review_command_hint`，便于复核 connect / profile / proxy / locale / timezone。 |
 | 真实二进制 smoke | 已在本机验证 | 使用 `--launch-browser-smoke` 才会启动 provider。 |
 
 ## 4.1 Doctor 检查
@@ -113,6 +115,52 @@ reverse-agent-doctor \
   --browser-locale "zh-CN" \
   --browser-timezone "Asia/Shanghai"
 ```
+
+如果只想从 doctor 入口生成一条脱敏后的显式 launch-smoke 命令，不 resolve provider、不检查 availability、不启动浏览器、不写 artifact、不调用 MCP：
+
+```bash
+reverse-agent-doctor \
+  --browser cloakbrowser \
+  --browser-url "http://127.0.0.1:9222" \
+  --browser-profile-dir "./profiles/example" \
+  --browser-locale "zh-CN" \
+  --browser-timezone "Asia/Shanghai" \
+  --print-browser-launch-command
+```
+
+metadata-only smoke evidence 可以先生成配置审计，不启动真实浏览器：
+
+```bash
+reverse-agent-browser-provider-smoke \
+  --browser cloakbrowser \
+  --browser-url "http://127.0.0.1:9222" \
+  --browser-profile-dir "./profiles/example" \
+  --browser-locale "zh-CN" \
+  --browser-timezone "Asia/Shanghai"
+```
+
+如果只想先打印一条脱敏后的显式 launch-smoke 命令，不写 `workspace/browser-provider-smoke.json`、不 resolve provider、不检查 availability、也不启动浏览器：
+
+```bash
+reverse-agent-browser-provider-smoke \
+  --browser cloakbrowser \
+  --browser-url "http://127.0.0.1:9222" \
+  --browser-profile-dir "./profiles/example" \
+  --browser-locale "zh-CN" \
+  --browser-timezone "Asia/Shanghai" \
+  --print-launch-command
+```
+
+已有 `workspace/browser-provider-smoke.json` 也可以先走只读 policy gate，要求必须达到真实 launch smoke 级别时使用：
+
+```bash
+reverse-agent-browser-provider-smoke \
+  --review-smoke-json "./artifacts/browser-provider-smoke/workspace/browser-provider-smoke.json" \
+  --expected-provider cloakbrowser \
+  --minimum-evidence-level launch-smoke
+```
+
+这个 review / policy gate 只读取既有 JSON，输出 `attachment_acceptance`、`acceptance_report` 和 `policy_decision`；它不会生成 smoke、启动 CloakBrowser、检查 availability、resolve provider、调用 factory、探测 CDP、写 artifact 或调用 MCP。PR / CI 可以使用默认要求 `launch-smoke` 的 `reverse-agent-browser-provider-smoke-policy --smoke-json <path> --expected-provider cloakbrowser`。
 
 只有显式加入 `--launch-browser-smoke` 时才会启动真实浏览器：
 
@@ -139,4 +187,4 @@ reverse-agent-doctor \
 3. 已在真实 CloakBrowser 环境下确认 dependency probe、profile 和 humanize 参数行为。
 4. 已接入 connect baseline：`CloakBrowserProvider.connect()` 会在配置 `browser_url` 时通过 Playwright CDP 连接已有 CloakBrowser / cloakserve endpoint，并继续复用 `NativeWebRuntime` collectors。
 5. 持续保持 CDP-enhanced collectors 接入 capability gate：支持则采 request initiator、script source、WebSocket frame，不支持则降级为 baseline evidence。
-6. 将 CloakBrowser smoke 纳入本地手动测试，不放入默认公开 CI。
+6. 将真实 CloakBrowser launch smoke 纳入本地手动测试；默认公开 CI 只跑合成 JSON 的 smoke policy gate 回归，不启动 CloakBrowser。

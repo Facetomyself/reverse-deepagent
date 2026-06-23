@@ -21,11 +21,15 @@ from .registry import (
 )
 from .session import PlaywrightBrowserPageAdapter, PlaywrightBrowserSessionAdapter, PlaywrightCDPSessionAdapter
 from .smoke import (
+    BROWSER_PROVIDER_COMPATIBILITY_RULE_VERSION,
     DEFAULT_BROWSER_PROVIDER_MATRIX,
+    BrowserProviderCompatibilityRule,
     browser_provider_metadata_matrix_payload,
     browser_provider_smoke_matrix_payload,
     browser_provider_smoke_row,
     legacy_browser_provider_payload_from_smoke_row,
+    list_browser_provider_compatibility_rules,
+    validate_browser_provider_capability_compatibility,
 )
 
 __all__ = [
@@ -35,7 +39,9 @@ __all__ = [
     "BrowserProvider",
     "BrowserProviderCapabilities",
     "BrowserProviderError",
+    "BROWSER_PROVIDER_COMPATIBILITY_RULE_VERSION",
     "BROWSER_PROVIDER_ENTRY_POINT_GROUP",
+    "BrowserProviderCompatibilityRule",
     "BrowserProviderFactory",
     "BrowserProviderRegistration",
     "BrowserProviderRegistry",
@@ -52,7 +58,9 @@ __all__ = [
     "browser_provider_smoke_row",
     "cloakbrowser_browser_provider_registration",
     "legacy_browser_provider_payload_from_smoke_row",
+    "list_browser_provider_compatibility_rules",
     "playwright_chromium_browser_provider_registration",
     "remote_cdp_browser_provider_registration",
+    "validate_browser_provider_capability_compatibility",
     "metadata_has_secret_like_keys",
 ]

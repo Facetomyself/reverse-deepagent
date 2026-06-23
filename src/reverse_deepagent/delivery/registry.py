@@ -6,7 +6,9 @@ from importlib import metadata as importlib_metadata
 from typing import Any, Callable
 
 from reverse_deepagent.delivery.executors import (
+    DEFAULT_EXTERNAL_DELIVERY_RETRY_STATUS_CODES,
     ExternalDeliveryProvider,
+    GitHubReleaseExternalDeliveryProvider,
     LocalArchiveExternalDeliveryProvider,
     PresignedObjectExternalDeliveryProvider,
     ReviewOnlyExternalDeliveryProvider,
@@ -202,6 +204,14 @@ def presigned_object_external_delivery_provider_registration() -> ExternalDelive
                 "publishes_externally": True,
                 "external_boundary": "presigned-object-storage-url",
                 "sends_http_put": True,
+                "supports_explicit_retry": True,
+                "supports_retry_after_metadata": True,
+                "supports_rate_limit_metadata": True,
+                "supports_retry_budget_metadata": True,
+                "supports_retry_jitter_config": True,
+                "default_retry_attempts": 0,
+                "default_retry_jitter_seconds": 0,
+                "default_retry_status_codes": list(DEFAULT_EXTERNAL_DELIVERY_RETRY_STATUS_CODES),
                 "records_response_body": False,
                 "records_response_headers": False,
                 "cloud_sdk_required": False,
@@ -228,6 +238,14 @@ def webhook_external_delivery_provider_registration() -> ExternalDeliveryProvide
                 "publishes_externally": True,
                 "external_boundary": "http-json-webhook",
                 "sends_http_post": True,
+                "supports_explicit_retry": True,
+                "supports_retry_after_metadata": True,
+                "supports_rate_limit_metadata": True,
+                "supports_retry_budget_metadata": True,
+                "supports_retry_jitter_config": True,
+                "default_retry_attempts": 0,
+                "default_retry_jitter_seconds": 0,
+                "default_retry_status_codes": list(DEFAULT_EXTERNAL_DELIVERY_RETRY_STATUS_CODES),
                 "records_response_body": False,
                 "records_response_headers": False,
             },
@@ -236,8 +254,51 @@ def webhook_external_delivery_provider_registration() -> ExternalDeliveryProvide
     )
 
 
+def github_release_external_delivery_provider_registration() -> ExternalDeliveryProviderRegistration:
+    return ExternalDeliveryProviderRegistration(
+        provider_id="github-release",
+        aliases=("gh-release", "github-release-assets"),
+        capabilities=ExternalDeliveryProviderCapabilities(
+            provider_id="github-release",
+            display_name="GitHub Release asset external delivery",
+            transport="github-release",
+            supports_external_delivery=True,
+            review_only=False,
+            metadata={
+                "side_effect_free": False,
+                "dry_run_side_effect_free": True,
+                "writes_external_delivery_result": True,
+                "publishes_externally": True,
+                "external_boundary": "github-release-asset",
+                "sends_http_post": True,
+                "supports_explicit_retry": True,
+                "supports_retry_after_metadata": True,
+                "supports_rate_limit_metadata": True,
+                "supports_retry_budget_metadata": True,
+                "supports_retry_jitter_config": True,
+                "default_retry_attempts": 0,
+                "default_retry_jitter_seconds": 0,
+                "default_retry_status_codes": list(DEFAULT_EXTERNAL_DELIVERY_RETRY_STATUS_CODES),
+                "supports_existing_release_reuse": True,
+                "supports_existing_asset_preflight": True,
+                "supports_existing_asset_overwrite_preflight": True,
+                "supports_existing_asset_delete_preflight": True,
+                "existing_asset_conflict_default": "block",
+                "supports_existing_asset_overwrite": True,
+                "supports_existing_asset_delete": True,
+                "existing_asset_overwrite_requires_explicit_approval": True,
+                "records_response_body": False,
+                "records_response_headers": False,
+                "github_sdk_required": False,
+            },
+        ),
+        factory=lambda **kwargs: GitHubReleaseExternalDeliveryProvider(**kwargs),
+    )
+
+
 def build_default_external_delivery_provider_registry(*, load_entry_points: bool = True) -> ExternalDeliveryProviderRegistry:
     registry = ExternalDeliveryProviderRegistry()
+    registry.register(github_release_external_delivery_provider_registration())
     registry.register(local_archive_external_delivery_provider_registration())
     registry.register(presigned_object_external_delivery_provider_registration())
     registry.register(review_only_external_delivery_provider_registration())

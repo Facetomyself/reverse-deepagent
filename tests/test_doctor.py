@@ -100,6 +100,7 @@ class DoctorTests(unittest.TestCase):
             "browser_timezone": None,
             "launch_browser_smoke": False,
             "browser_smoke_url": "about:blank",
+            "print_browser_launch_command": False,
             "external_delivery_providers": False,
             "runtime_backends": False,
             "delivery_transaction_root": None,
@@ -178,6 +179,8 @@ class DoctorTests(unittest.TestCase):
         self.assertTrue(payload["mcp"]["command"]["exists"])
         self.assertTrue(payload["browser_provider"]["ok"])
         self.assertIn("reverse-agent-demo", payload["console_scripts"]["repo_venv_scripts"])
+        self.assertIn("reverse-agent-browser-provider-smoke", payload["console_scripts"]["repo_venv_scripts"])
+        self.assertIn("reverse-agent-workspace-dual-write-smoke", payload["console_scripts"]["repo_venv_scripts"])
 
     def test_doctor_help_does_not_require_chrome_or_mcp(self) -> None:
         result = subprocess.run(
@@ -262,18 +265,85 @@ class DoctorTests(unittest.TestCase):
         self.assertEqual(matrix["entry_point_group"], "reverse_deepagent.browser_providers")
         self.assertIn("provider_registration_metadata", matrix)
         self.assertEqual(matrix["compatibility_rule_version"], "2026-05-31.metadata-compatibility-v1")
+        self.assertEqual(matrix["production_readiness_version"], "2026-06-05.production-readiness-v5")
+        self.assertIn("compatibility_rules", matrix)
+        self.assertIn("production_readiness_rules", matrix)
+        self.assertGreaterEqual(len(matrix["compatibility_rules"]), 10)
+        self.assertGreaterEqual(len(matrix["production_readiness_rules"]), 4)
         self.assertEqual(matrix["summary"]["provider_count"], 3)
         self.assertEqual(matrix["summary"]["compatibility"]["error_count"], 0)
+        self.assertEqual(matrix["summary"]["production_readiness"]["production_ready_count"], 1)
+        self.assertEqual(matrix["summary"]["production_readiness"]["review_required_count"], 2)
+        self.assertEqual(matrix["summary"]["production_readiness"]["metadata_incomplete_count"], 0)
         by_provider = {item["provider_id"]: item for item in matrix["providers"]}
         self.assertIn("playwright-chromium", by_provider)
         self.assertIn("cloakbrowser", by_provider)
         self.assertIn("remote-cdp", by_provider)
         self.assertEqual(by_provider["remote-cdp"]["supported_modes"], ["connect", "cdp", "runtime-eval", "debugger"])
         self.assertEqual(by_provider["remote-cdp"]["compatibility"]["status"], "compatible")
+        self.assertEqual(by_provider["cloakbrowser"]["production_readiness"]["status"], "production-ready")
+        self.assertEqual(by_provider["remote-cdp"]["production_readiness"]["status"], "review-required")
         for row in matrix["providers"]:
             lifecycle = {item["stage"]: item["status"] for item in row["lifecycle"]}
             self.assertEqual(lifecycle["availability_checked"], "not_checked")
             self.assertEqual(lifecycle["session_start_requested"], "skipped")
+
+    def test_doctor_can_print_browser_launch_command_without_provider_side_effects(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            payload = run_doctor(
+                self.make_args(
+                    Path(tmp),
+                    browser="cloakbrowser",
+                    print_browser_launch_command=True,
+                    browser_smoke_url="https://example.test/smoke",
+                    browser_url="http://user:pass@127.0.0.1:65530",
+                    browser_proxy="http://user:pass@example.test:8080",
+                    browser_args="--proxy-server=http://user:pass@example.test:8080 --lang=zh-CN",
+                    jsreverser_mcp_command=str(Path(tmp) / "missing-mcp"),
+                )
+            )
+        command = payload["browser_provider_launch_command"]
+        self.assertTrue(payload["ok"])
+        self.assertNotIn("browser_provider", payload)
+        self.assertTrue(payload["port_before"]["skipped"])
+        self.assertTrue(payload["port_after_launch"]["skipped"])
+        self.assertEqual(command["schema_version"], "reverse-deepagent.browser-provider-launch-command.v1")
+        self.assertEqual(command["requested_provider_id"], "cloakbrowser")
+        self.assertEqual(command["mode"], "print-launch-command")
+        self.assertFalse(command["side_effect_policy"]["provider_registry_resolved"])
+        self.assertFalse(command["side_effect_policy"]["provider_factories_invoked"])
+        self.assertFalse(command["side_effect_policy"]["starts_browser"])
+        self.assertFalse(command["side_effect_policy"]["writes_artifact"])
+        self.assertFalse(command["side_effect_policy"]["calls_mcp"])
+        self.assertTrue(command["side_effect_policy"]["prints_command_only"])
+        self.assertIn("--launch-browser-smoke", command["review_command_hint"]["command"])
+        self.assertIn("--browser", command["review_command_hint"]["command"])
+        self.assertIn("cloakbrowser", command["review_command_hint"]["command"])
+        encoded = json.dumps(command, ensure_ascii=False)
+        self.assertNotIn("user:pass", encoded)
+        self.assertNotIn("user:pass", json.dumps(payload, ensure_ascii=False))
+        self.assertIn("<redacted>", encoded)
+        self.assertIn("<proxy-url>", encoded)
+
+    def test_doctor_browser_launch_command_reports_malformed_args_without_side_effects(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            payload = run_doctor(
+                self.make_args(
+                    Path(tmp),
+                    browser="cloakbrowser",
+                    print_browser_launch_command=True,
+                    browser_args='"unterminated',
+                    jsreverser_mcp_command=str(Path(tmp) / "missing-mcp"),
+                )
+            )
+        command = payload["browser_provider_launch_command"]
+        self.assertFalse(payload["ok"])
+        self.assertFalse(command["ok"])
+        self.assertTrue(payload["port_before"]["skipped"])
+        self.assertTrue(payload["port_after_launch"]["skipped"])
+        self.assertIn("No closing quotation", command["error"])
+        self.assertFalse(command["side_effect_policy"]["provider_factories_invoked"])
+        self.assertFalse(command["side_effect_policy"]["starts_browser"])
 
     def test_doctor_can_emit_side_effect_free_external_delivery_provider_matrix(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -290,15 +360,38 @@ class DoctorTests(unittest.TestCase):
         self.assertTrue(payload["port_before"]["skipped"])
         self.assertTrue(payload["port_after_launch"]["skipped"])
         self.assertEqual(matrix["entry_point_group"], "reverse_deepagent.external_delivery_providers")
-        self.assertEqual(matrix["summary"]["provider_count"], 4)
+        self.assertEqual(matrix["summary"]["provider_count"], 5)
         self.assertEqual(matrix["summary"]["review_only_count"], 1)
-        self.assertEqual(matrix["summary"]["external_delivery_capable_count"], 3)
+        self.assertEqual(matrix["summary"]["external_delivery_capable_count"], 4)
+        self.assertIn("github-release", matrix["provider_ids"])
+        self.assertIn("gh-release", matrix["provider_ids"])
+        self.assertIn("github-release-assets", matrix["provider_ids"])
         self.assertIn("manual-handoff", matrix["provider_ids"])
         self.assertIn("filesystem-release", matrix["provider_ids"])
         self.assertIn("http-webhook", matrix["provider_ids"])
         self.assertIn("object-storage", matrix["provider_ids"])
         self.assertIn("s3-presigned", matrix["provider_ids"])
         by_provider = {provider["provider_id"]: provider for provider in matrix["providers"]}
+        github_release = by_provider["github-release"]
+        self.assertEqual(github_release["aliases"], ["gh-release", "github-release-assets"])
+        self.assertTrue(github_release["supports_external_delivery"])
+        self.assertEqual(github_release["transport"], "github-release")
+        self.assertTrue(github_release["metadata"]["supports_existing_release_reuse"])
+        self.assertTrue(github_release["metadata"]["supports_existing_asset_preflight"])
+        self.assertTrue(github_release["metadata"]["supports_existing_asset_overwrite_preflight"])
+        self.assertTrue(github_release["metadata"]["supports_existing_asset_delete_preflight"])
+        self.assertEqual(github_release["metadata"]["existing_asset_conflict_default"], "block")
+        self.assertTrue(github_release["metadata"]["supports_existing_asset_overwrite"])
+        self.assertTrue(github_release["metadata"]["supports_existing_asset_delete"])
+        self.assertTrue(github_release["metadata"]["existing_asset_overwrite_requires_explicit_approval"])
+        self.assertTrue(github_release["metadata"]["supports_explicit_retry"])
+        self.assertTrue(github_release["metadata"]["supports_retry_after_metadata"])
+        self.assertTrue(github_release["metadata"]["supports_rate_limit_metadata"])
+        self.assertTrue(github_release["metadata"]["supports_retry_budget_metadata"])
+        self.assertTrue(github_release["metadata"]["supports_retry_jitter_config"])
+        self.assertEqual(github_release["metadata"]["default_retry_attempts"], 0)
+        self.assertEqual(github_release["metadata"]["default_retry_jitter_seconds"], 0)
+        self.assertIn(503, github_release["metadata"]["default_retry_status_codes"])
         provider = by_provider["review-only"]
         self.assertEqual(provider["aliases"], ["noop", "manual-handoff"])
         self.assertFalse(provider["supports_external_delivery"])
@@ -310,10 +403,24 @@ class DoctorTests(unittest.TestCase):
         self.assertEqual(webhook["aliases"], ["webhook-json", "http-webhook"])
         self.assertTrue(webhook["supports_external_delivery"])
         self.assertEqual(webhook["transport"], "webhook")
+        self.assertTrue(webhook["metadata"]["supports_explicit_retry"])
+        self.assertTrue(webhook["metadata"]["supports_retry_after_metadata"])
+        self.assertTrue(webhook["metadata"]["supports_rate_limit_metadata"])
+        self.assertTrue(webhook["metadata"]["supports_retry_budget_metadata"])
+        self.assertTrue(webhook["metadata"]["supports_retry_jitter_config"])
+        self.assertEqual(webhook["metadata"]["default_retry_attempts"], 0)
+        self.assertEqual(webhook["metadata"]["default_retry_jitter_seconds"], 0)
         presigned = by_provider["presigned-object"]
         self.assertEqual(presigned["aliases"], ["object-storage", "presigned-url", "s3-presigned"])
         self.assertTrue(presigned["supports_external_delivery"])
         self.assertEqual(presigned["transport"], "object-storage")
+        self.assertTrue(presigned["metadata"]["supports_explicit_retry"])
+        self.assertTrue(presigned["metadata"]["supports_retry_after_metadata"])
+        self.assertTrue(presigned["metadata"]["supports_rate_limit_metadata"])
+        self.assertTrue(presigned["metadata"]["supports_retry_budget_metadata"])
+        self.assertTrue(presigned["metadata"]["supports_retry_jitter_config"])
+        self.assertEqual(presigned["metadata"]["default_retry_attempts"], 0)
+        self.assertEqual(presigned["metadata"]["default_retry_jitter_seconds"], 0)
         self.assertFalse(matrix["side_effect_policy"]["provider_factories_invoked"])
         self.assertFalse(matrix["side_effect_policy"]["external_delivery_performed"])
 

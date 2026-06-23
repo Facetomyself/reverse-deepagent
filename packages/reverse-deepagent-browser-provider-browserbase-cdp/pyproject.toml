@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reverse-deepagent-browser-provider-browserbase-cdp"
+version = "0.1.0"
+description = "Browserbase CDP BrowserProvider plugin for reverse-deepagent."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = [
+  "reverse-deepagent==0.1.0",
+]
+
+[project.entry-points."reverse_deepagent.browser_providers"]
+browserbase-cdp = "reverse_deepagent_browser_provider_browserbase_cdp:browser_provider_registration"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

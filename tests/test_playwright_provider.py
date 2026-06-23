@@ -19,6 +19,8 @@ class PlaywrightProviderTests(unittest.TestCase):
         self.assertTrue(payload["supports_persistent_context"])
         self.assertTrue(payload["supports_cdp"])
         self.assertEqual(payload["config"]["profile_dir"], "/tmp/reverse-agent-playwright-profile")
+        self.assertEqual(payload["production_readiness"]["readiness_tier"], "review-required")
+        self.assertEqual(payload["production_readiness"]["profile_lifecycle"], "temporary-context-or-user-data-dir")
 
     def test_missing_playwright_dependency_is_structured_unavailable(self) -> None:
         provider = PlaywrightChromiumProvider()

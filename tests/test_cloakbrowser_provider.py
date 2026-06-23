@@ -27,6 +27,9 @@ class CloakBrowserProviderTests(unittest.TestCase):
         self.assertTrue(payload["supports_connect"])
         self.assertEqual(payload["config"]["browser_url"], "http://127.0.0.1:9222")
         self.assertEqual(payload["config"]["proxy"], "<configured>")
+        self.assertEqual(payload["production_readiness"]["readiness_tier"], "production-ready")
+        self.assertEqual(payload["production_readiness"]["proxy_policy"], "provider-level-redacted")
+        self.assertEqual(payload["production_readiness"]["humanize_policy"], "supported")
         self.assertNotIn("user:pass", str(payload))
 
     def test_missing_cloakbrowser_dependency_is_structured_unavailable(self) -> None:

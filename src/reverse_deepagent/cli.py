@@ -6,7 +6,7 @@ import os
 import shlex
 import sys
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Sequence
 
 from reverse_deepagent.coordinator import legacy_mcp_alias_warning, run_platform_pipeline, run_reverse_pipeline
 from reverse_deepagent.runtime.chrome import ChromeDebugConfig, DEFAULT_CHROME_PATH, DEFAULT_START_SCRIPT, DEFAULT_STOP_SCRIPT, DEFAULT_USER_DATA_DIR
@@ -14,6 +14,30 @@ from reverse_deepagent.runtime.legacy_mcp import DEFAULT_JSREVERSER_MCP_COMMAND,
 
 DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ARTIFACT_ROOT = DEFAULT_REPO_ROOT / "artifacts"
+
+
+def _parse_artifact_key_list(value: str | None) -> list[str] | None:
+    if not value:
+        return None
+    keys = [item.strip() for item in value.split(",") if item.strip()]
+    return list(dict.fromkeys(keys))
+
+
+def _load_json_object_file(path_value: str | None, *, label: str) -> dict[str, Any] | None:
+    """Load an optional UTF-8 JSON object file for explicit pipeline evidence inputs."""
+
+    if not path_value:
+        return None
+    path = Path(path_value)
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise ValueError(f"{label} cannot be read: {path}") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{label} must contain valid JSON: {path}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"{label} must contain a JSON object: {path}")
+    return payload
 
 
 def build_demo_parser() -> argparse.ArgumentParser:
@@ -73,6 +97,20 @@ def build_demo_parser() -> argparse.ArgumentParser:
     parser.add_argument("--browser-geoip", action="store_true", help="Let BrowserProvider derive geo settings from proxy/IP when supported.")
     parser.add_argument("--browser-locale", default=None, help="Optional BrowserProvider locale, such as zh-CN.")
     parser.add_argument("--browser-timezone", default=None, help="Optional BrowserProvider timezone, such as Asia/Shanghai.")
+    parser.add_argument(
+        "--browser-provider-smoke-json",
+        default=None,
+        help=(
+            "Optional path to a reviewed workspace/browser-provider-smoke.json object to attach to the Web pipeline artifacts. "
+            "This only reads the file; it does not generate smoke evidence, start browsers, probe CDP endpoints, or call MCP."
+        ),
+    )
+    parser.add_argument("--enable-workspace-dual-write", action="store_true", help="Opt in to writing registered workspace artifacts to both legacy and future foldered paths.")
+    parser.add_argument(
+        "--workspace-dual-write-artifact-keys",
+        default="",
+        help="Optional comma-separated artifact keys that limit --enable-workspace-dual-write to a reviewed pilot scope.",
+    )
     return parser
 
 
@@ -84,6 +122,13 @@ def main_demo(argv: Sequence[str] | None = None) -> int:
     warning = legacy_mcp_alias_warning(args.runtime)
     if warning:
         print(warning, file=sys.stderr)
+    try:
+        browser_provider_smoke = _load_json_object_file(
+            args.browser_provider_smoke_json,
+            label="--browser-provider-smoke-json",
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
     chrome_config = ChromeDebugConfig(
         debug_port=args.chrome_debug_port,
         debug_address=args.chrome_debug_address,
@@ -118,6 +163,9 @@ def main_demo(argv: Sequence[str] | None = None) -> int:
             browser_geoip=args.browser_geoip,
             browser_locale=args.browser_locale,
             browser_timezone=args.browser_timezone,
+            browser_provider_smoke=browser_provider_smoke,
+            enable_workspace_dual_write=args.enable_workspace_dual_write,
+            workspace_dual_write_artifact_keys=_parse_artifact_key_list(args.workspace_dual_write_artifact_keys),
         )
     except LegacyMcpPluginUnavailableError as exc:
         print(
@@ -161,6 +209,12 @@ def build_platform_parser() -> argparse.ArgumentParser:
     parser.add_argument("--mini-program-devtools-command", default=None, help="Optional vendor mini-program devtools CLI path/name.")
     parser.add_argument("--mini-program-vendor", default=None, help="Mini-program vendor, for example wechat or alipay.")
     parser.add_argument("--mini-program-project-path", default=None, help="Optional mini-program local project path.")
+    parser.add_argument("--enable-workspace-dual-write", action="store_true", help="Opt in to writing registered workspace artifacts to both legacy and future foldered paths.")
+    parser.add_argument(
+        "--workspace-dual-write-artifact-keys",
+        default="",
+        help="Optional comma-separated artifact keys that limit --enable-workspace-dual-write to a reviewed pilot scope.",
+    )
     return parser
 
 
@@ -184,6 +238,8 @@ def main_platform(argv: Sequence[str] | None = None) -> int:
         task_text=args.task_text,
         artifact_root=Path(args.artifact_root),
         runtime_kind=args.runtime,
+        enable_workspace_dual_write=args.enable_workspace_dual_write,
+        workspace_dual_write_artifact_keys=_parse_artifact_key_list(args.workspace_dual_write_artifact_keys),
         **runtime_kwargs,
     )
     print(json.dumps(output.model_dump(mode="json", exclude_none=True), ensure_ascii=False, indent=2))

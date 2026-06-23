@@ -6,6 +6,7 @@ from pathlib import Path
 
 from reverse_deepagent.browser.base import BrowserProviderUnavailableError
 from reverse_deepagent.browser.registry import BrowserProviderRegistry
+from reverse_deepagent.browser.smoke import browser_provider_metadata_matrix_payload
 
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1] / "packages" / "reverse-deepagent-browser-provider-template"
@@ -31,6 +32,7 @@ class BrowserProviderPluginTemplateTests(unittest.TestCase):
             registry = BrowserProviderRegistry()
             registry.register(registration)
             metadata = registry.list_registration_metadata()
+            matrix = browser_provider_metadata_matrix_payload(provider_metadata=metadata)
             self.assertEqual(module.factory_invocation_count(), 0)
             provider = registry.create("browser-template")
             self.assertEqual(module.factory_invocation_count(), 1)
@@ -42,6 +44,9 @@ class BrowserProviderPluginTemplateTests(unittest.TestCase):
         self.assertIn("custom-browser-template", metadata[0]["aliases"])
         self.assertFalse(metadata[0]["supports_launch"])
         self.assertFalse(metadata[0]["supports_cdp"])
+        self.assertEqual(metadata[0]["production_readiness"]["readiness_tier"], "template-only")
+        self.assertEqual(matrix["providers"][0]["production_readiness"]["status"], "metadata-incomplete")
+        self.assertEqual(matrix["summary"]["production_readiness"]["metadata_incomplete_count"], 1)
         self.assertEqual(provider.describe().provider_id, "template-browser")
         with self.assertRaises(BrowserProviderUnavailableError):
             provider.start()

@@ -85,6 +85,36 @@ class RecordingWebhookHandler(http.server.BaseHTTPRequestHandler):
         return
 
 
+class RetryingWebhookHandler(http.server.BaseHTTPRequestHandler):
+    requests: list[dict[str, object]] = []
+
+    def do_POST(self) -> None:  # noqa: N802 - stdlib handler API
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length)
+        self.__class__.requests.append(
+            {
+                "path": self.path,
+                "headers": dict(self.headers),
+                "body": body,
+            }
+        )
+        if len(self.__class__.requests) == 1:
+            self.send_response(503)
+            self.send_header("Retry-After", "2")
+            self.send_header("X-RateLimit-Limit", "60")
+            self.send_header("X-RateLimit-Remaining", "0")
+            self.send_header("X-RateLimit-Reset", "1234567890")
+            self.send_header("X-RateLimit-Used", "60")
+            self.send_header("X-RateLimit-Resource", "webhook")
+            self.end_headers()
+            return
+        self.send_response(204)
+        self.end_headers()
+
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - stdlib handler API
+        return
+
+
 class RecordingObjectHandler(http.server.BaseHTTPRequestHandler):
     requests: list[dict[str, object]] = []
 
@@ -99,6 +129,288 @@ class RecordingObjectHandler(http.server.BaseHTTPRequestHandler):
             }
         )
         self.send_response(200)
+        self.end_headers()
+
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - stdlib handler API
+        return
+
+
+class RecordingGitHubReleaseHandler(http.server.BaseHTTPRequestHandler):
+    requests: list[dict[str, object]] = []
+
+    def _record_request(self, body: bytes = b"") -> None:
+        self.__class__.requests.append(
+            {
+                "method": self.command,
+                "path": self.path,
+                "headers": dict(self.headers),
+                "body": body,
+            }
+        )
+
+    def do_POST(self) -> None:  # noqa: N802 - stdlib handler API
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length)
+        self._record_request(body)
+        if self.path == "/repos/owner/repo/releases":
+            response = json.dumps(
+                {
+                    "id": 1,
+                    "assets_url": f"http://127.0.0.1:{self.server.server_port}/repos/owner/repo/releases/1/assets?asset_query=hidden",
+                    "upload_url": f"http://127.0.0.1:{self.server.server_port}/uploads/assets{{?name,label}}",
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            ).encode("utf-8")
+            self.send_response(201)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(response)))
+            self.end_headers()
+            self.wfile.write(response)
+            return
+        if self.path.startswith("/uploads/assets?name="):
+            response = b'{"id":2}'
+            self.send_response(201)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(response)))
+            self.end_headers()
+            self.wfile.write(response)
+            return
+        self.send_response(404)
+        self.end_headers()
+
+    def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
+        self._record_request()
+        if self.path.startswith("/repos/owner/repo/releases/1/assets"):
+            response = b"[]"
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(response)))
+            self.end_headers()
+            self.wfile.write(response)
+            return
+        self.send_response(404)
+        self.end_headers()
+
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - stdlib handler API
+        return
+
+
+class RetryingGitHubReleaseHandler(http.server.BaseHTTPRequestHandler):
+    requests: list[dict[str, object]] = []
+
+    def _record_request(self, body: bytes = b"") -> None:
+        self.__class__.requests.append(
+            {
+                "method": self.command,
+                "path": self.path,
+                "headers": dict(self.headers),
+                "body": body,
+            }
+        )
+
+    def do_POST(self) -> None:  # noqa: N802 - stdlib handler API
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length)
+        self._record_request(body)
+        release_request_count = sum(
+            1
+            for request in self.__class__.requests
+            if request.get("method") == "POST" and request.get("path") == "/repos/owner/repo/releases"
+        )
+        if self.path == "/repos/owner/repo/releases" and release_request_count == 1:
+            response = b'{"message":"secondary rate limit","secret":"body-not-recorded"}'
+            self.send_response(429)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(response)))
+            self.send_header("Retry-After", "3")
+            self.send_header("X-RateLimit-Limit", "5000")
+            self.send_header("X-RateLimit-Remaining", "0")
+            self.send_header("X-RateLimit-Reset", "1234567891")
+            self.send_header("X-RateLimit-Used", "5000")
+            self.send_header("X-RateLimit-Resource", "core")
+            self.end_headers()
+            self.wfile.write(response)
+            return
+        if self.path == "/repos/owner/repo/releases":
+            response = json.dumps(
+                {
+                    "id": 9,
+                    "assets_url": f"http://127.0.0.1:{self.server.server_port}/repos/owner/repo/releases/9/assets?asset_query=hidden",
+                    "upload_url": f"http://127.0.0.1:{self.server.server_port}/uploads/retry{{?name,label}}",
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            ).encode("utf-8")
+            self.send_response(201)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(response)))
+            self.end_headers()
+            self.wfile.write(response)
+            return
+        if self.path.startswith("/uploads/retry?name="):
+            response = b'{"id":10}'
+            self.send_response(201)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(response)))
+            self.end_headers()
+            self.wfile.write(response)
+            return
+        self.send_response(404)
+        self.end_headers()
+
+    def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
+        self._record_request()
+        if self.path.startswith("/repos/owner/repo/releases/9/assets"):
+            response = b"[]"
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(response)))
+            self.end_headers()
+            self.wfile.write(response)
+            return
+        self.send_response(404)
+        self.end_headers()
+
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - stdlib handler API
+        return
+
+
+class RecordingGitHubReleaseReuseHandler(http.server.BaseHTTPRequestHandler):
+    requests: list[dict[str, object]] = []
+
+    def _record_request(self, body: bytes = b"") -> None:
+        self.__class__.requests.append(
+            {
+                "method": self.command,
+                "path": self.path,
+                "headers": dict(self.headers),
+                "body": body,
+            }
+        )
+
+    def do_POST(self) -> None:  # noqa: N802 - stdlib handler API
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length)
+        self._record_request(body)
+        if self.path == "/repos/owner/repo/releases":
+            response = b'{"message":"already_exists","secret":"body-not-recorded"}'
+            self.send_response(422)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(response)))
+            self.end_headers()
+            self.wfile.write(response)
+            return
+        if self.path.startswith("/uploads/existing?name="):
+            response = b'{"id":3,"secret":"upload-response-not-recorded"}'
+            self.send_response(201)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(response)))
+            self.end_headers()
+            self.wfile.write(response)
+            return
+        self.send_response(404)
+        self.end_headers()
+
+    def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
+        self._record_request()
+        if self.path == "/repos/owner/repo/releases/tags/v0-existing":
+            response = json.dumps(
+                {
+                    "id": 2,
+                    "assets_url": f"http://127.0.0.1:{self.server.server_port}/repos/owner/repo/releases/2/assets?asset_query=hidden",
+                    "upload_url": f"http://127.0.0.1:{self.server.server_port}/uploads/existing{{?name,label}}",
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            ).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(response)))
+            self.end_headers()
+            self.wfile.write(response)
+            return
+        if self.path.startswith("/repos/owner/repo/releases/2/assets"):
+            response = b"[]"
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(response)))
+            self.end_headers()
+            self.wfile.write(response)
+            return
+        self.send_response(404)
+        self.end_headers()
+
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - stdlib handler API
+        return
+
+
+class RecordingGitHubReleaseAssetPreflightHandler(http.server.BaseHTTPRequestHandler):
+    requests: list[dict[str, object]] = []
+    existing_assets: list[dict[str, object]] = []
+    delete_status_code: int = 204
+
+    def _record_request(self, body: bytes = b"") -> None:
+        self.__class__.requests.append(
+            {
+                "method": self.command,
+                "path": self.path,
+                "headers": dict(self.headers),
+                "body": body,
+            }
+        )
+
+    def do_POST(self) -> None:  # noqa: N802 - stdlib handler API
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length)
+        self._record_request(body)
+        if self.path == "/repos/owner/repo/releases":
+            response = json.dumps(
+                {
+                    "id": 7,
+                    "assets_url": f"http://127.0.0.1:{self.server.server_port}/repos/owner/repo/releases/7/assets?asset_query=hidden",
+                    "upload_url": f"http://127.0.0.1:{self.server.server_port}/uploads/duplicate{{?name,label}}",
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            ).encode("utf-8")
+            self.send_response(201)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(response)))
+            self.end_headers()
+            self.wfile.write(response)
+            return
+        if self.path.startswith("/uploads/duplicate?name="):
+            response = b'{"id":8,"secret":"upload-response-not-recorded"}'
+            self.send_response(201)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(response)))
+            self.end_headers()
+            self.wfile.write(response)
+            return
+        self.send_response(404)
+        self.end_headers()
+
+    def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
+        self._record_request()
+        if self.path.startswith("/repos/owner/repo/releases/7/assets"):
+            response = json.dumps(
+                self.__class__.existing_assets,
+                ensure_ascii=False,
+                sort_keys=True,
+            ).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(response)))
+            self.end_headers()
+            self.wfile.write(response)
+            return
+        self.send_response(404)
+        self.end_headers()
+
+    def do_DELETE(self) -> None:  # noqa: N802 - stdlib handler API
+        self._record_request()
+        self.send_response(int(self.__class__.delete_status_code))
         self.end_headers()
 
     def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - stdlib handler API
@@ -184,6 +496,377 @@ class LocalDeliveryExecutorTests(TestCase):
             self.assertFalse(journal["external_delivery_performed"])
             self.assertFalse(journal["manifest_revision_committed"])
             self.assertIn("does_not_publish_external_delivery", journal["metadata"]["limitations"])
+
+
+    def test_apply_can_acquire_local_transaction_lock_when_required(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-lock-apply",
+                    mode=DeliveryExecutionMode.APPLY,
+                    require_transaction_lock=True,
+                    transaction_lock_owner="agent-a",
+                    transaction_lock_lease_seconds=60,
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            lock_path = delivery_root / "delivery-transaction-lock.json"
+            self.assertEqual(result.status, "delivered")
+            self.assertIsNotNone(result.transaction_lock)
+            assert result.transaction_lock is not None
+            self.assertTrue(result.transaction_lock.lock_acquired)
+            self.assertFalse(result.transaction_lock.stale_lock_detected)
+            self.assertTrue(lock_path.exists())
+            lock = json.loads(lock_path.read_text(encoding="utf-8"))
+            self.assertEqual(lock["status"], "acquired")
+            self.assertEqual(lock["owner"], "agent-a")
+            self.assertEqual(lock["operation"], "local_delivery_apply")
+            self.assertFalse(lock["metadata"]["distributed_lock"])
+
+    def test_apply_blocks_when_local_transaction_lock_is_held_by_other_owner(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+            delivery_root.mkdir(parents=True)
+            lock_path = delivery_root / "delivery-transaction-lock.json"
+            lock_path.write_text(
+                json.dumps(
+                    {
+                        "transaction_id": "tx-existing",
+                        "owner": "agent-a",
+                        "resume_token": "resume-a",
+                        "lease_expires_at": "2999-01-01T00:00:00+00:00",
+                        "status": "acquired",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-lock-blocked",
+                    mode=DeliveryExecutionMode.APPLY,
+                    require_transaction_lock=True,
+                    transaction_lock_owner="agent-b",
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            self.assertEqual(result.status, "blocked")
+            self.assertEqual(result.next_action, "review_or_release_delivery_transaction_lock")
+            self.assertIsNotNone(result.transaction_lock)
+            assert result.transaction_lock is not None
+            self.assertIn("transaction_lock_not_held_by_other_owner", result.transaction_lock.blocking_reasons)
+            self.assertFalse((delivery_root / "final-result.json").exists())
+            lock = json.loads(lock_path.read_text(encoding="utf-8"))
+            self.assertEqual(lock["owner"], "agent-a")
+
+    def test_apply_can_resume_local_transaction_lock_with_matching_token(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+            delivery_root.mkdir(parents=True)
+            (delivery_root / "delivery-transaction-lock.json").write_text(
+                json.dumps(
+                    {
+                        "transaction_id": "tx-existing",
+                        "owner": "agent-a",
+                        "resume_token": "resume-a",
+                        "lease_expires_at": "2999-01-01T00:00:00+00:00",
+                        "status": "acquired",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-lock-resume",
+                    mode=DeliveryExecutionMode.APPLY,
+                    require_transaction_lock=True,
+                    transaction_lock_owner="agent-b",
+                    expected_resume_token="resume-a",
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            self.assertEqual(result.status, "delivered")
+            self.assertIsNotNone(result.transaction_lock)
+            assert result.transaction_lock is not None
+            self.assertTrue(result.transaction_lock.lock_acquired)
+            self.assertTrue(result.transaction_lock.resume_accepted)
+            self.assertEqual(result.transaction_lock.resume_token, "resume-a")
+            self.assertTrue((delivery_root / "final-result.json").exists())
+
+    def test_apply_can_continue_when_expected_fencing_token_matches_provider_record(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+            delivery_root.mkdir(parents=True)
+            (delivery_root / "delivery-distributed-transaction-lock.json").write_text(
+                json.dumps(
+                    {
+                        "transaction_id": "tx-provider-lock",
+                        "owner": "agent-a",
+                        "fencing_token": "7",
+                        "lease_expires_at": "2999-01-01T00:00:00+00:00",
+                        "status": "acquired",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-fencing-allowed",
+                    mode=DeliveryExecutionMode.APPLY,
+                    require_transaction_lock=True,
+                    transaction_lock_owner="agent-a",
+                    expected_transaction_lock_fencing_token="7",
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            self.assertEqual(result.status, "delivered")
+            self.assertIsNotNone(result.transaction_lock)
+            assert result.transaction_lock is not None
+            self.assertEqual(result.transaction_lock.expected_fencing_token, "7")
+            self.assertEqual(result.transaction_lock.fencing_token, "7")
+            self.assertTrue(result.transaction_lock.metadata["downstream_fencing_enforced"])
+            self.assertTrue((delivery_root / "final-result.json").exists())
+
+    def test_apply_blocks_when_expected_fencing_token_mismatches_provider_record(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+            delivery_root.mkdir(parents=True)
+            (delivery_root / "delivery-distributed-transaction-lock.json").write_text(
+                json.dumps(
+                    {
+                        "transaction_id": "tx-provider-lock",
+                        "owner": "agent-a",
+                        "fencing_token": "6",
+                        "lease_expires_at": "2999-01-01T00:00:00+00:00",
+                        "status": "acquired",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-fencing-blocked",
+                    mode=DeliveryExecutionMode.APPLY,
+                    require_transaction_lock=True,
+                    transaction_lock_owner="agent-a",
+                    expected_transaction_lock_fencing_token="7",
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            self.assertEqual(result.status, "blocked")
+            self.assertEqual(result.next_action, "review_or_release_delivery_transaction_lock")
+            self.assertFalse(result.filesystem_artifact_mutated)
+            self.assertIsNotNone(result.transaction_lock)
+            assert result.transaction_lock is not None
+            self.assertIn("expected_transaction_lock_fencing_token_matches", result.transaction_lock.blocking_reasons)
+            self.assertEqual(result.transaction_lock.expected_fencing_token, "7")
+            self.assertEqual(result.transaction_lock.fencing_token, "6")
+            self.assertFalse((delivery_root / "final-result.json").exists())
+            self.assertFalse((delivery_root / "delivery-receipt.json").exists())
+            self.assertFalse((delivery_root / "delivery-transaction-journal.json").exists())
+
+    def test_transaction_lock_release_requires_explicit_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            delivery_root = root / "delivery"
+            delivery_root.mkdir(parents=True)
+            lock_path = delivery_root / "delivery-transaction-lock.json"
+            lock_path.write_text(
+                json.dumps(
+                    {
+                        "transaction_id": "tx-existing",
+                        "owner": "agent-a",
+                        "resume_token": "resume-a",
+                        "lease_expires_at": "2999-01-01T00:00:00+00:00",
+                        "status": "acquired",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-release",
+                    mode=DeliveryExecutionMode.APPLY,
+                    release_transaction_lock=True,
+                    transaction_lock_owner="agent-a",
+                    expected_resume_token="resume-a",
+                )
+            ).execute([])
+
+            self.assertEqual(result.status, "blocked")
+            self.assertEqual(result.next_action, "fix_delivery_transaction_lock_release_blockers")
+            self.assertIsNotNone(result.transaction_lock_release)
+            assert result.transaction_lock_release is not None
+            self.assertIn("transaction_lock_release_approved", result.transaction_lock_release.blocking_reasons)
+            self.assertFalse(result.transaction_lock_release.lock_removed)
+            self.assertTrue(lock_path.exists())
+            self.assertTrue((delivery_root / "delivery-transaction-lock-release.json").exists())
+
+    def test_transaction_lock_release_removes_matching_local_lock_when_approved(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            delivery_root = root / "delivery"
+            delivery_root.mkdir(parents=True)
+            lock_path = delivery_root / "delivery-transaction-lock.json"
+            lock_path.write_text(
+                json.dumps(
+                    {
+                        "transaction_id": "tx-existing",
+                        "owner": "agent-a",
+                        "resume_token": "resume-a",
+                        "lease_expires_at": "2999-01-01T00:00:00+00:00",
+                        "status": "acquired",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-release",
+                    mode=DeliveryExecutionMode.APPLY,
+                    release_transaction_lock=True,
+                    approve_transaction_lock_release=True,
+                    transaction_lock_owner="agent-a",
+                    expected_transaction_lock_transaction_id="tx-existing",
+                    expected_resume_token="resume-a",
+                )
+            ).execute([])
+
+            release_path = delivery_root / "delivery-transaction-lock-release.json"
+            self.assertEqual(result.status, "lock_released")
+            self.assertEqual(result.next_action, "review_delivery_transaction_lock_release")
+            self.assertFalse(lock_path.exists())
+            self.assertTrue(release_path.exists())
+            release = json.loads(release_path.read_text(encoding="utf-8"))
+            self.assertEqual(release["status"], "released")
+            self.assertTrue(release["lock_removed"])
+            self.assertEqual(release["expected_lock_transaction_id"], "tx-existing")
+            self.assertFalse(release["metadata"]["distributed_lock"])
+
+    def test_transaction_lock_release_blocks_expected_owner_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            delivery_root = root / "delivery"
+            delivery_root.mkdir(parents=True)
+            lock_path = delivery_root / "delivery-transaction-lock.json"
+            lock_path.write_text(
+                json.dumps(
+                    {
+                        "transaction_id": "tx-existing",
+                        "owner": "agent-a",
+                        "resume_token": "resume-a",
+                        "lease_expires_at": "2999-01-01T00:00:00+00:00",
+                        "status": "acquired",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-release",
+                    mode=DeliveryExecutionMode.APPLY,
+                    release_transaction_lock=True,
+                    approve_transaction_lock_release=True,
+                    expected_transaction_lock_owner="agent-b",
+                )
+            ).execute([])
+
+            self.assertEqual(result.status, "blocked")
+            self.assertIsNotNone(result.transaction_lock_release)
+            assert result.transaction_lock_release is not None
+            self.assertIn("expected_transaction_lock_owner_matches", result.transaction_lock_release.blocking_reasons)
+            self.assertFalse(result.transaction_lock_release.lock_removed)
+            self.assertTrue(lock_path.exists())
+
+
+    def test_lock_blocking_prevents_backend_manifest_in_place_mutation_side_effects(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir(parents=True)
+            source = workspace / "final-result.json"
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            backend_manifest = workspace / "backend-artifact-manifest.json"
+            original_manifest = {"entries": []}
+            backend_manifest.write_text(json.dumps(original_manifest, ensure_ascii=False) + "\n", encoding="utf-8")
+            delivery_root = root / "delivery"
+            delivery_root.mkdir(parents=True)
+            lock_path = delivery_root / "delivery-transaction-lock.json"
+            lock_path.write_text(
+                json.dumps(
+                    {
+                        "transaction_id": "tx-existing",
+                        "owner": "agent-a",
+                        "resume_token": "resume-a",
+                        "lease_expires_at": "2999-01-01T00:00:00+00:00",
+                        "status": "acquired",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-lock-blocks-manifest",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_backend_manifest_mutation=True,
+                    preflight_backend_manifest_in_place_mutation=True,
+                    approve_backend_manifest_in_place_mutation=True,
+                    expected_backend_manifest_digest_sha256=_sha256_file(backend_manifest),
+                    backend_manifest_path=backend_manifest,
+                    require_transaction_lock=True,
+                    transaction_lock_owner="agent-b",
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            self.assertEqual(result.status, "blocked")
+            self.assertEqual(result.next_action, "review_or_release_delivery_transaction_lock")
+            self.assertFalse(result.filesystem_artifact_mutated)
+            self.assertFalse(result.backend_manifest_mutated)
+            self.assertFalse(result.backend_manifest_rollback_written)
+            self.assertEqual(json.loads(backend_manifest.read_text(encoding="utf-8")), original_manifest)
+            self.assertFalse((delivery_root / "backend-artifact-manifest-in-place-mutation.json").exists())
+            self.assertFalse((delivery_root / "backend-artifact-manifest.rollback.json").exists())
+            self.assertFalse((delivery_root / "delivery-transaction-journal.json").exists())
+            lock = json.loads(lock_path.read_text(encoding="utf-8"))
+            self.assertEqual(lock["owner"], "agent-a")
 
 
     def test_apply_can_commit_local_manifest_revision(self) -> None:
@@ -793,6 +1476,77 @@ class LocalDeliveryExecutorTests(TestCase):
             self.assertTrue(journal["backend_manifest_mutated"])
             self.assertFalse(journal["external_delivery_performed"])
 
+    def test_duplicate_cross_run_transaction_commit_preserves_terminal_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir(parents=True)
+            source = workspace / "final-result.json"
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            backend_manifest = workspace / "backend-artifact-manifest.json"
+            backend_manifest.write_text('{"entries": []}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-commit-idempotent-source",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_backend_manifest_mutation=True,
+                    preflight_backend_manifest_in_place_mutation=True,
+                    approve_backend_manifest_in_place_mutation=True,
+                    expected_backend_manifest_digest_sha256=_sha256_file(backend_manifest),
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final", destination_name="final-result.json")])
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-commit-idempotent-preflight",
+                    mode=DeliveryExecutionMode.APPLY,
+                    preflight_backend_manifest_recovery=True,
+                    expected_recovery_transaction_id="tx-commit-idempotent-source",
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([])
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-commit-idempotent-first",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_cross_run_transaction=True,
+                    expected_commit_transaction_id="tx-commit-idempotent-source",
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([])
+
+            commit_path = delivery_root / "backend-artifact-manifest-transaction-commit.json"
+            original_commit = json.loads(commit_path.read_text(encoding="utf-8"))
+            duplicate = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-commit-idempotent-second",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_cross_run_transaction=True,
+                    expected_commit_transaction_id="tx-commit-idempotent-source",
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([])
+
+            guard_path = delivery_root / "delivery-transaction-idempotency-guard.json"
+            preserved_commit = json.loads(commit_path.read_text(encoding="utf-8"))
+            guard = json.loads(guard_path.read_text(encoding="utf-8"))
+            self.assertEqual(duplicate.status, "blocked")
+            self.assertIsNotNone(duplicate.transaction_idempotency_guard)
+            self.assertEqual(duplicate.transaction_idempotency_guard.operation, "commit_cross_run_transaction")
+            self.assertTrue(duplicate.transaction_state.flags["transaction_idempotency_guard_triggered"])
+            self.assertEqual(duplicate.transaction_state.evidence_paths["transaction_idempotency_guard"], str(guard_path.resolve()))
+            self.assertEqual(original_commit, preserved_commit)
+            self.assertEqual(guard["status"], "duplicate_blocked")
+            self.assertTrue(guard["duplicate_guard_triggered"])
+            self.assertTrue(guard["terminal_artifact_preserved"])
+            self.assertEqual(guard["terminal_artifact_path"], str(commit_path.resolve()))
+
     def test_backend_manifest_transaction_commit_blocks_stale_recovery_preflight(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -921,6 +1675,79 @@ class LocalDeliveryExecutorTests(TestCase):
             self.assertTrue(journal["backend_manifest_mutated"])
             self.assertFalse(journal["cross_run_transaction_committed"])
             self.assertFalse(journal["external_delivery_performed"])
+
+    def test_duplicate_backend_manifest_recovery_preserves_terminal_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir(parents=True)
+            source = workspace / "final-result.json"
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            backend_manifest = workspace / "backend-artifact-manifest.json"
+            original_manifest = {"entries": [{"artifact_key": "existing", "path": "workspace/existing.json", "kind": "json"}]}
+            backend_manifest.write_text(json.dumps(original_manifest, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
+            delivery_root = root / "delivery"
+
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-recovery-idempotent-source",
+                    mode=DeliveryExecutionMode.APPLY,
+                    commit_backend_manifest_mutation=True,
+                    preflight_backend_manifest_in_place_mutation=True,
+                    approve_backend_manifest_in_place_mutation=True,
+                    expected_backend_manifest_digest_sha256=_sha256_file(backend_manifest),
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final", destination_name="final-result.json")])
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-recovery-idempotent-preflight",
+                    mode=DeliveryExecutionMode.APPLY,
+                    preflight_backend_manifest_recovery=True,
+                    expected_recovery_transaction_id="tx-recovery-idempotent-source",
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([])
+            LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-recovery-idempotent-first",
+                    mode=DeliveryExecutionMode.APPLY,
+                    apply_backend_manifest_recovery=True,
+                    expected_recovery_transaction_id="tx-recovery-idempotent-source",
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([])
+
+            recovery_path = delivery_root / "backend-artifact-manifest-recovery.json"
+            original_recovery = json.loads(recovery_path.read_text(encoding="utf-8"))
+            duplicate = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-recovery-idempotent-second",
+                    mode=DeliveryExecutionMode.APPLY,
+                    apply_backend_manifest_recovery=True,
+                    expected_recovery_transaction_id="tx-recovery-idempotent-source",
+                    backend_manifest_path=backend_manifest,
+                )
+            ).execute([])
+
+            guard_path = delivery_root / "delivery-transaction-idempotency-guard.json"
+            preserved_recovery = json.loads(recovery_path.read_text(encoding="utf-8"))
+            guard = json.loads(guard_path.read_text(encoding="utf-8"))
+            self.assertEqual(duplicate.status, "blocked")
+            self.assertIsNotNone(duplicate.transaction_idempotency_guard)
+            self.assertEqual(duplicate.transaction_idempotency_guard.operation, "apply_backend_manifest_recovery")
+            self.assertTrue(duplicate.transaction_state.flags["transaction_idempotency_guard_triggered"])
+            self.assertEqual(duplicate.transaction_state.evidence_paths["transaction_idempotency_guard"], str(guard_path.resolve()))
+            self.assertEqual(original_recovery, preserved_recovery)
+            self.assertEqual(json.loads(backend_manifest.read_text(encoding="utf-8")), original_manifest)
+            self.assertEqual(guard["status"], "duplicate_blocked")
+            self.assertTrue(guard["duplicate_guard_triggered"])
+            self.assertTrue(guard["terminal_artifact_preserved"])
+            self.assertEqual(guard["terminal_artifact_path"], str(recovery_path.resolve()))
 
     def test_backend_manifest_recovery_blocks_source_manifest_drift_after_preflight(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1080,6 +1907,46 @@ class LocalDeliveryExecutorTests(TestCase):
             self.assertEqual(result.external_delivery_result.provider_id, "fake-provider")
             self.assertTrue(journal["external_delivery_performed"])
             self.assertTrue(external_result["external_delivery_performed"])
+
+    def test_external_delivery_writes_idempotency_ledger_for_performed_provider(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=delivery_root,
+                    transaction_id="tx-external-ledger",
+                    mode=DeliveryExecutionMode.APPLY,
+                    request_external_delivery=True,
+                    external_delivery_provider=FakeExternalDeliveryProvider(),
+                    external_delivery_idempotency_key="ledger-key-1",
+                    external_delivery_provider_config={"api_token": "ledger-secret"},
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            ledger_path = delivery_root / "external-delivery-idempotency-ledger.json"
+            journal = json.loads((delivery_root / "delivery-transaction-journal.json").read_text(encoding="utf-8"))
+            ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+            self.assertEqual(result.status, "external_delivered")
+            self.assertIsNotNone(result.external_delivery_idempotency_ledger)
+            self.assertTrue(ledger_path.exists())
+            self.assertEqual(Path(journal["external_delivery_idempotency_ledger_path"]).resolve(), ledger_path.resolve())
+            self.assertEqual(ledger["transaction_id"], "tx-external-ledger")
+            self.assertEqual(ledger["idempotency_key"], "ledger-key-1")
+            self.assertEqual(ledger["provider_id"], "fake-provider")
+            self.assertTrue(ledger["external_delivery_performed"])
+            self.assertFalse(ledger["duplicate_guard_triggered"])
+            self.assertEqual(ledger["entry_count"], 1)
+            self.assertEqual(ledger["entries"][0]["status"], "delivered")
+            self.assertEqual(ledger["entries"][0]["idempotency_key"], "ledger-key-1")
+            self.assertFalse(ledger["entries"][0]["attempt_summary"]["headers_recorded"])
+            self.assertFalse(ledger["metadata"]["provider_config_values_recorded"])
+            serialized_ledger = json.dumps(ledger, ensure_ascii=False)
+            self.assertNotIn("ledger-secret", serialized_ledger)
 
     def test_external_delivery_provider_config_is_summarized_without_exporting_values(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1288,6 +2155,83 @@ class LocalDeliveryExecutorTests(TestCase):
             self.assertNotIn("query_secret=redacted", serialized_result)
             self.assertTrue((delivery_root / "external-delivery-result.json").exists())
 
+    def test_webhook_external_delivery_can_retry_retryable_status_when_explicit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+            RetryingWebhookHandler.requests = []
+            server = http.server.HTTPServer(("127.0.0.1", 0), RetryingWebhookHandler)
+            server.timeout = 5
+            thread = threading.Thread(target=lambda: [server.handle_request(), server.handle_request()])
+            thread.daemon = True
+            thread.start()
+            try:
+                webhook_url = f"http://127.0.0.1:{server.server_port}/deliver?query_secret=redacted"
+                result = LocalDeliveryExecutor(
+                    DeliveryExecutorConfig(
+                        delivery_root=delivery_root,
+                        transaction_id="tx-webhook-retry",
+                        mode=DeliveryExecutionMode.APPLY,
+                        request_external_delivery=True,
+                        external_delivery_provider_id="webhook",
+                        external_delivery_provider_config={
+                            "webhook_url": webhook_url,
+                            "headers": {"Authorization": "Token retry-secret"},
+                            "timeout_seconds": 5,
+                            "retry_attempts": 1,
+                            "retry_backoff_seconds": 0,
+                        },
+                    )
+                ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+            finally:
+                thread.join(timeout=5)
+                server.server_close()
+
+            self.assertEqual(result.status, "external_delivered")
+            self.assertTrue(result.external_delivery_performed)
+            self.assertEqual(len(RetryingWebhookHandler.requests), 2)
+            metadata = result.external_delivery_result.metadata if result.external_delivery_result else {}
+            self.assertTrue(metadata["retry_enabled"])
+            self.assertEqual(metadata["retry_attempts_configured"], 1)
+            self.assertEqual(metadata["request_attempt_count"], 2)
+            self.assertEqual(metadata["request_retry_count"], 1)
+            self.assertEqual(metadata["response_status_code"], 204)
+            self.assertEqual(metadata["request_attempts"][0]["status_code"], 503)
+            self.assertTrue(metadata["request_attempts"][0]["will_retry"])
+            self.assertEqual(metadata["request_attempts"][0]["retry_after_seconds"], 2)
+            self.assertTrue(metadata["request_attempts"][0]["retry_after_seen"])
+            self.assertFalse(metadata["request_attempts"][0]["retry_after_honored"])
+            self.assertEqual(metadata["request_attempts"][0]["planned_retry_delay_seconds"], 0.0)
+            self.assertEqual(metadata["request_attempts"][0]["rate_limit"]["remaining"], 0)
+            self.assertEqual(metadata["request_attempts"][0]["rate_limit"]["resource"], "webhook")
+            self.assertEqual(metadata["request_attempts"][1]["status_code"], 204)
+            self.assertFalse(metadata["request_attempts"][1]["will_retry"])
+            self.assertTrue(metadata["request_retry_summary"]["retry_after_seen"])
+            self.assertFalse(metadata["request_retry_summary"]["retry_after_honored"])
+            self.assertTrue(metadata["request_retry_summary"]["rate_limit_seen"])
+            self.assertFalse(metadata["request_retry_summary"]["headers_recorded"])
+            serialized_result = json.dumps(result.external_delivery_result.to_dict(), ensure_ascii=False)
+            self.assertNotIn("retry-secret", serialized_result)
+            self.assertNotIn("query_secret=redacted", serialized_result)
+            ledger = json.loads((delivery_root / "external-delivery-idempotency-ledger.json").read_text(encoding="utf-8"))
+            attempt_summary = ledger["entries"][0]["attempt_summary"]
+            self.assertEqual(attempt_summary["attempt_count"], 2)
+            self.assertEqual(attempt_summary["retry_count"], 1)
+            self.assertEqual(attempt_summary["stages"][0]["stage"], "request")
+            self.assertTrue(attempt_summary["retry_after_seen"])
+            self.assertTrue(attempt_summary["rate_limit_seen"])
+            self.assertFalse(attempt_summary["headers_recorded"])
+            self.assertEqual(attempt_summary["stages"][0]["attempts"][0]["status_code"], 503)
+            self.assertEqual(attempt_summary["stages"][0]["attempts"][0]["retry_after_seconds"], 2)
+            self.assertEqual(attempt_summary["stages"][0]["attempts"][0]["rate_limit"]["limit"], 60)
+            self.assertEqual(attempt_summary["stages"][0]["attempts"][1]["status_code"], 204)
+            serialized_ledger = json.dumps(ledger, ensure_ascii=False)
+            self.assertNotIn("retry-secret", serialized_ledger)
+            self.assertNotIn("query_secret=redacted", serialized_ledger)
+
     def test_presigned_object_external_delivery_dry_run_redacts_target_without_network(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1390,6 +2334,683 @@ class LocalDeliveryExecutorTests(TestCase):
             self.assertNotIn("upload_secret=redacted", serialized_result)
             self.assertTrue((delivery_root / "external-delivery-result.json").exists())
 
+    def test_github_release_external_delivery_dry_run_redacts_config_without_network(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+
+            result = LocalDeliveryExecutor(
+                DeliveryExecutorConfig(
+                    delivery_root=root / "delivery",
+                    transaction_id="tx-github-release-dry-run",
+                    mode=DeliveryExecutionMode.DRY_RUN,
+                    request_external_delivery=True,
+                    external_delivery_provider_id="gh-release",
+                    external_delivery_provider_config={
+                        "repository": "https://github.com/owner/repo.git",
+                        "tag_name": "v0-test",
+                        "asset_name": "reverse-delivery.json",
+                        "token": "ghp_secret_token",
+                        "api_base_url": "https://user:pass@api.github.invalid?api_token=secret",
+                    },
+                )
+            ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+
+            self.assertEqual(result.status, "planned")
+            self.assertFalse(result.external_delivery_performed)
+            self.assertIsNotNone(result.external_delivery_result)
+            self.assertEqual(result.external_delivery_result.provider_id, "github-release")
+            metadata = result.external_delivery_result.metadata
+            self.assertEqual(metadata["repository"], "owner/repo")
+            self.assertEqual(metadata["tag_name"], "v0-test")
+            self.assertEqual(metadata["asset_name"], "reverse-delivery.json")
+            self.assertEqual(metadata["release_api_url"], "https://api.github.invalid")
+            self.assertTrue(metadata["api_query_redacted"])
+            self.assertTrue(metadata["api_credentials_redacted"])
+            self.assertFalse(metadata["release_request_attempted"])
+            self.assertFalse(metadata["upload_request_attempted"])
+            self.assertFalse(metadata["response_body_recorded"])
+            self.assertFalse(metadata["response_headers_recorded"])
+            self.assertFalse(metadata["request_headers_recorded"])
+            self.assertEqual(metadata["external_delivery_provider_config_summary"]["secret_like_key_count"], 1)
+            serialized_result = json.dumps(result.external_delivery_result.to_dict(), ensure_ascii=False)
+            self.assertNotIn("ghp_secret_token", serialized_result)
+            self.assertNotIn("api_token=secret", serialized_result)
+            self.assertNotIn("user:pass", serialized_result)
+            self.assertFalse((root / "delivery").exists())
+
+    def test_github_release_external_delivery_apply_posts_release_and_asset_without_recording_secrets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+            RecordingGitHubReleaseHandler.requests = []
+            server = http.server.HTTPServer(("127.0.0.1", 0), RecordingGitHubReleaseHandler)
+            server.timeout = 5
+            thread = threading.Thread(target=lambda: [server.handle_request(), server.handle_request(), server.handle_request()])
+            thread.daemon = True
+            thread.start()
+            try:
+                result = LocalDeliveryExecutor(
+                    DeliveryExecutorConfig(
+                        delivery_root=delivery_root,
+                        transaction_id="tx-github-release-apply",
+                        mode=DeliveryExecutionMode.APPLY,
+                        request_external_delivery=True,
+                        external_delivery_provider_id="github-release-assets",
+                        external_delivery_provider_config={
+                            "repository": "owner/repo",
+                            "tag_name": "v0-test",
+                            "release_name": "Reverse DeepAgent v0 test",
+                            "asset_name": "reverse-delivery.json",
+                            "token": "ghp_local_secret",
+                            "api_base_url": f"http://127.0.0.1:{server.server_port}",
+                            "timeout_seconds": 5,
+                        },
+                    )
+                ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+            finally:
+                thread.join(timeout=5)
+                server.server_close()
+
+            self.assertEqual(result.status, "external_delivered")
+            self.assertTrue(result.external_delivery_performed)
+            self.assertEqual(len(RecordingGitHubReleaseHandler.requests), 3)
+            release_request, assets_request, upload_request = RecordingGitHubReleaseHandler.requests
+            self.assertEqual(release_request["method"], "POST")
+            self.assertEqual(release_request["path"], "/repos/owner/repo/releases")
+            self.assertEqual(assets_request["method"], "GET")
+            self.assertEqual(
+                assets_request["path"],
+                "/repos/owner/repo/releases/1/assets?asset_query=hidden",
+            )
+            self.assertEqual(upload_request["method"], "POST")
+            self.assertEqual(upload_request["path"], "/uploads/assets?name=reverse-delivery.json")
+            release_headers = {str(key).lower(): value for key, value in dict(release_request["headers"]).items()}
+            assets_headers = {str(key).lower(): value for key, value in dict(assets_request["headers"]).items()}
+            upload_headers = {str(key).lower(): value for key, value in dict(upload_request["headers"]).items()}
+            self.assertEqual(release_headers["authorization"], "Bearer ghp_local_secret")
+            self.assertEqual(assets_headers["authorization"], "Bearer ghp_local_secret")
+            self.assertEqual(upload_headers["authorization"], "Bearer ghp_local_secret")
+            release_body = json.loads(bytes(release_request["body"]).decode("utf-8"))
+            self.assertEqual(release_body["tag_name"], "v0-test")
+            self.assertEqual(release_body["name"], "Reverse DeepAgent v0 test")
+            upload_body = json.loads(bytes(upload_request["body"]).decode("utf-8"))
+            self.assertEqual(upload_body["provider_id"], "github-release")
+            self.assertEqual(upload_body["transaction_id"], "tx-github-release-apply")
+            self.assertEqual(upload_body["repository"], "owner/repo")
+            self.assertEqual(upload_body["asset_name"], "reverse-delivery.json")
+            self.assertEqual(upload_body["package"]["metadata"]["provider_id"], "github-release")
+            metadata = result.external_delivery_result.metadata if result.external_delivery_result else {}
+            self.assertEqual(metadata["release_api_url"], f"http://127.0.0.1:{server.server_port}/repos/owner/repo/releases")
+            self.assertEqual(metadata["assets_url"], f"http://127.0.0.1:{server.server_port}/repos/owner/repo/releases/1/assets")
+            self.assertEqual(metadata["upload_url"], f"http://127.0.0.1:{server.server_port}/uploads/assets")
+            self.assertTrue(metadata["check_existing_asset"])
+            self.assertFalse(metadata["allow_existing_asset"])
+            self.assertTrue(metadata["release_request_attempted"])
+            self.assertTrue(metadata["asset_lookup_attempted"])
+            self.assertTrue(metadata["upload_request_attempted"])
+            self.assertTrue(metadata["release_succeeded"])
+            self.assertTrue(metadata["asset_lookup_succeeded"])
+            self.assertFalse(metadata["existing_asset_found"])
+            self.assertEqual(metadata["existing_asset_count"], 0)
+            self.assertTrue(metadata["upload_succeeded"])
+            self.assertEqual(metadata["release_status_code"], 201)
+            self.assertEqual(metadata["asset_lookup_status_code"], 200)
+            self.assertEqual(metadata["upload_status_code"], 201)
+            self.assertFalse(metadata["response_body_recorded"])
+            self.assertFalse(metadata["response_headers_recorded"])
+            self.assertFalse(metadata["request_headers_recorded"])
+            serialized_result = json.dumps(result.external_delivery_result.to_dict(), ensure_ascii=False)
+            self.assertNotIn("ghp_local_secret", serialized_result)
+            self.assertNotIn("Authorization", serialized_result)
+            self.assertNotIn("asset_query=hidden", serialized_result)
+            self.assertTrue((delivery_root / "external-delivery-result.json").exists())
+
+    def test_github_release_external_delivery_records_retry_after_and_rate_limit_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+            RetryingGitHubReleaseHandler.requests = []
+            server = http.server.HTTPServer(("127.0.0.1", 0), RetryingGitHubReleaseHandler)
+            server.timeout = 5
+            thread = threading.Thread(target=lambda: [server.handle_request(), server.handle_request(), server.handle_request(), server.handle_request()])
+            thread.daemon = True
+            thread.start()
+            try:
+                result = LocalDeliveryExecutor(
+                    DeliveryExecutorConfig(
+                        delivery_root=delivery_root,
+                        transaction_id="tx-github-release-retry-rate-limit",
+                        mode=DeliveryExecutionMode.APPLY,
+                        request_external_delivery=True,
+                        external_delivery_provider_id="github-release",
+                        external_delivery_provider_config={
+                            "repository": "owner/repo",
+                            "tag_name": "v0-retry",
+                            "asset_name": "reverse-delivery.json",
+                            "token": "ghp_retry_rate_limit_secret",
+                            "api_base_url": f"http://127.0.0.1:{server.server_port}",
+                            "timeout_seconds": 5,
+                            "retry_attempts": 1,
+                            "retry_backoff_seconds": 0,
+                            "retry_jitter_seconds": 0,
+                        },
+                    )
+                ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+            finally:
+                thread.join(timeout=5)
+                server.server_close()
+
+            self.assertEqual(result.status, "external_delivered")
+            self.assertTrue(result.external_delivery_performed)
+            self.assertEqual(len(RetryingGitHubReleaseHandler.requests), 4)
+            metadata = result.external_delivery_result.metadata if result.external_delivery_result else {}
+            self.assertEqual(metadata["release_request_attempt_count"], 2)
+            self.assertEqual(metadata["release_request_retry_count"], 1)
+            self.assertEqual(metadata["release_request_attempts"][0]["status_code"], 429)
+            self.assertEqual(metadata["release_request_attempts"][0]["retry_after_seconds"], 3)
+            self.assertTrue(metadata["release_request_attempts"][0]["retry_after_seen"])
+            self.assertFalse(metadata["release_request_attempts"][0]["retry_after_honored"])
+            self.assertEqual(metadata["release_request_attempts"][0]["planned_retry_delay_seconds"], 0.0)
+            self.assertEqual(metadata["release_request_attempts"][0]["rate_limit"]["limit"], 5000)
+            self.assertEqual(metadata["release_request_attempts"][0]["rate_limit"]["remaining"], 0)
+            self.assertEqual(metadata["release_request_attempts"][0]["rate_limit"]["resource"], "core")
+            self.assertEqual(metadata["release_request_attempts"][1]["status_code"], 201)
+            self.assertTrue(metadata["release_request_retry_summary"]["retry_after_seen"])
+            self.assertTrue(metadata["release_request_retry_summary"]["rate_limit_seen"])
+            self.assertFalse(metadata["release_request_retry_summary"]["headers_recorded"])
+            self.assertEqual(metadata["retry_jitter_seconds"], 0.0)
+            self.assertTrue(metadata["honor_retry_after"])
+            ledger = json.loads((delivery_root / "external-delivery-idempotency-ledger.json").read_text(encoding="utf-8"))
+            attempt_summary = ledger["entries"][0]["attempt_summary"]
+            self.assertTrue(attempt_summary["retry_after_seen"])
+            self.assertTrue(attempt_summary["rate_limit_seen"])
+            release_stage = next(stage for stage in attempt_summary["stages"] if stage["stage"] == "release_request")
+            self.assertEqual(release_stage["attempts"][0]["retry_after_seconds"], 3)
+            self.assertEqual(release_stage["attempts"][0]["rate_limit"]["used"], 5000)
+            serialized_result = json.dumps(result.external_delivery_result.to_dict(), ensure_ascii=False)
+            serialized_ledger = json.dumps(ledger, ensure_ascii=False)
+            self.assertNotIn("ghp_retry_rate_limit_secret", serialized_result)
+            self.assertNotIn("body-not-recorded", serialized_result)
+            self.assertNotIn("ghp_retry_rate_limit_secret", serialized_ledger)
+            self.assertNotIn("body-not-recorded", serialized_ledger)
+
+    def test_github_release_external_delivery_apply_can_reuse_existing_release_when_explicit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+            RecordingGitHubReleaseReuseHandler.requests = []
+            server = http.server.HTTPServer(("127.0.0.1", 0), RecordingGitHubReleaseReuseHandler)
+            server.timeout = 5
+            thread = threading.Thread(
+                target=lambda: [server.handle_request(), server.handle_request(), server.handle_request(), server.handle_request()]
+            )
+            thread.daemon = True
+            thread.start()
+            try:
+                result = LocalDeliveryExecutor(
+                    DeliveryExecutorConfig(
+                        delivery_root=delivery_root,
+                        transaction_id="tx-github-release-reuse",
+                        mode=DeliveryExecutionMode.APPLY,
+                        request_external_delivery=True,
+                        external_delivery_provider_id="github-release",
+                        external_delivery_provider_config={
+                            "repository": "owner/repo",
+                            "tag_name": "v0-existing",
+                            "asset_name": "reverse-delivery.json",
+                            "token": "ghp_reuse_secret",
+                            "api_base_url": f"http://127.0.0.1:{server.server_port}",
+                            "reuse_existing_release": True,
+                            "timeout_seconds": 5,
+                        },
+                    )
+                ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+            finally:
+                thread.join(timeout=5)
+                server.server_close()
+
+            self.assertEqual(result.status, "external_delivered")
+            self.assertTrue(result.external_delivery_performed)
+            self.assertEqual(len(RecordingGitHubReleaseReuseHandler.requests), 4)
+            create_request, lookup_request, assets_request, upload_request = RecordingGitHubReleaseReuseHandler.requests
+            self.assertEqual(create_request["method"], "POST")
+            self.assertEqual(create_request["path"], "/repos/owner/repo/releases")
+            self.assertEqual(lookup_request["method"], "GET")
+            self.assertEqual(lookup_request["path"], "/repos/owner/repo/releases/tags/v0-existing")
+            self.assertEqual(assets_request["method"], "GET")
+            self.assertEqual(
+                assets_request["path"],
+                "/repos/owner/repo/releases/2/assets?asset_query=hidden",
+            )
+            self.assertEqual(upload_request["method"], "POST")
+            self.assertEqual(upload_request["path"], "/uploads/existing?name=reverse-delivery.json")
+            for request in (create_request, lookup_request, assets_request, upload_request):
+                headers = {str(key).lower(): value for key, value in dict(request["headers"]).items()}
+                self.assertEqual(headers["authorization"], "Bearer ghp_reuse_secret")
+            metadata = result.external_delivery_result.metadata if result.external_delivery_result else {}
+            self.assertTrue(metadata["reuse_existing_release"])
+            self.assertTrue(metadata["release_request_attempted"])
+            self.assertEqual(metadata["release_status_code"], 422)
+            self.assertFalse(metadata["release_created"])
+            self.assertTrue(metadata["existing_release_lookup_attempted"])
+            self.assertTrue(metadata["existing_release_lookup_succeeded"])
+            self.assertTrue(metadata["existing_release_reused"])
+            self.assertEqual(metadata["existing_release_status_code"], 200)
+            self.assertEqual(
+                metadata["existing_release_api_url"],
+                f"http://127.0.0.1:{server.server_port}/repos/owner/repo/releases/tags/v0-existing",
+            )
+            self.assertEqual(metadata["assets_url"], f"http://127.0.0.1:{server.server_port}/repos/owner/repo/releases/2/assets")
+            self.assertTrue(metadata["check_existing_asset"])
+            self.assertFalse(metadata["allow_existing_asset"])
+            self.assertTrue(metadata["asset_lookup_attempted"])
+            self.assertTrue(metadata["asset_lookup_succeeded"])
+            self.assertFalse(metadata["existing_asset_found"])
+            self.assertEqual(metadata["existing_asset_count"], 0)
+            self.assertEqual(metadata["asset_lookup_status_code"], 200)
+            self.assertTrue(metadata["release_succeeded"])
+            self.assertTrue(metadata["upload_succeeded"])
+            self.assertEqual(metadata["upload_status_code"], 201)
+            serialized_result = json.dumps(result.external_delivery_result.to_dict(), ensure_ascii=False)
+            self.assertNotIn("ghp_reuse_secret", serialized_result)
+            self.assertNotIn("body-not-recorded", serialized_result)
+            self.assertNotIn("upload-response-not-recorded", serialized_result)
+            self.assertNotIn("asset_query=hidden", serialized_result)
+            self.assertTrue((delivery_root / "external-delivery-result.json").exists())
+
+    def test_github_release_external_delivery_blocks_existing_asset_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+            RecordingGitHubReleaseAssetPreflightHandler.requests = []
+            RecordingGitHubReleaseAssetPreflightHandler.existing_assets = [
+                {
+                    "id": 7,
+                    "name": "reverse-delivery.json",
+                    "url": f"http://127.0.0.1:1/repos/owner/repo/releases/assets/7?api_secret=hidden",
+                    "browser_download_url": "https://example.invalid/body-not-recorded?download_secret=hidden",
+                    "size": 123,
+                    "content_type": "application/json",
+                    "state": "uploaded",
+                }
+            ]
+            server = http.server.HTTPServer(("127.0.0.1", 0), RecordingGitHubReleaseAssetPreflightHandler)
+            server.timeout = 5
+            thread = threading.Thread(target=lambda: [server.handle_request(), server.handle_request()])
+            thread.daemon = True
+            thread.start()
+            try:
+                result = LocalDeliveryExecutor(
+                    DeliveryExecutorConfig(
+                        delivery_root=delivery_root,
+                        transaction_id="tx-github-release-asset-conflict",
+                        mode=DeliveryExecutionMode.APPLY,
+                        request_external_delivery=True,
+                        external_delivery_provider_id="github-release",
+                        external_delivery_provider_config={
+                            "repository": "owner/repo",
+                            "tag_name": "v0-duplicate",
+                            "asset_name": "reverse-delivery.json",
+                            "token": "ghp_asset_conflict_secret",
+                            "api_base_url": f"http://127.0.0.1:{server.server_port}",
+                            "timeout_seconds": 5,
+                        },
+                    )
+                ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+            finally:
+                thread.join(timeout=5)
+                server.server_close()
+
+            self.assertEqual(result.status, "external_delivery_blocked")
+            self.assertFalse(result.external_delivery_performed)
+            self.assertEqual(len(RecordingGitHubReleaseAssetPreflightHandler.requests), 2)
+            release_request, assets_request = RecordingGitHubReleaseAssetPreflightHandler.requests
+            self.assertEqual(release_request["method"], "POST")
+            self.assertEqual(assets_request["method"], "GET")
+            self.assertFalse(any(request["method"] == "DELETE" for request in RecordingGitHubReleaseAssetPreflightHandler.requests))
+            self.assertFalse(any(str(request["path"]).startswith("/uploads/duplicate") for request in RecordingGitHubReleaseAssetPreflightHandler.requests))
+            metadata = result.external_delivery_result.metadata if result.external_delivery_result else {}
+            self.assertTrue(metadata["check_existing_asset"])
+            self.assertFalse(metadata["allow_existing_asset"])
+            self.assertTrue(metadata["release_succeeded"])
+            self.assertTrue(metadata["asset_lookup_attempted"])
+            self.assertTrue(metadata["asset_lookup_succeeded"])
+            self.assertTrue(metadata["existing_asset_found"])
+            self.assertEqual(metadata["existing_asset_count"], 1)
+            self.assertEqual(metadata["existing_asset"]["id"], 7)
+            self.assertEqual(metadata["existing_asset"]["name"], "reverse-delivery.json")
+            self.assertEqual(metadata["existing_asset"]["api_url"], "http://127.0.0.1:1/repos/owner/repo/releases/assets/7")
+            self.assertTrue(metadata["existing_asset"]["browser_download_url_present"])
+            self.assertFalse(metadata["existing_asset"]["browser_download_url_recorded"])
+            overwrite_plan = metadata["existing_asset_overwrite_plan"]
+            self.assertEqual(overwrite_plan["status"], "requires_review")
+            self.assertTrue(overwrite_plan["delete_required"])
+            self.assertTrue(overwrite_plan["overwrite_required"])
+            self.assertFalse(overwrite_plan["delete_performed"])
+            self.assertFalse(overwrite_plan["overwrite_performed"])
+            self.assertTrue(overwrite_plan["requires_explicit_approval"])
+            self.assertEqual(overwrite_plan["recommended_transition"], "approve_github_release_asset_delete_then_upload")
+            self.assertFalse(overwrite_plan["side_effect_policy"]["sends_delete_request"])
+            self.assertFalse(overwrite_plan["side_effect_policy"]["uploads_replacement_asset"])
+            self.assertEqual(metadata["asset_lookup_status_code"], 200)
+            self.assertFalse(metadata["upload_request_attempted"])
+            self.assertFalse(metadata["upload_succeeded"])
+            self.assertIn("github_release_asset_not_already_present", result.external_delivery_result.blocking_reasons)
+            serialized_result = json.dumps(result.external_delivery_result.to_dict(), ensure_ascii=False)
+            self.assertNotIn("ghp_asset_conflict_secret", serialized_result)
+            self.assertNotIn("asset_query=hidden", serialized_result)
+            self.assertNotIn("api_secret=hidden", serialized_result)
+            self.assertNotIn("download_secret=hidden", serialized_result)
+            self.assertNotIn("body-not-recorded", serialized_result)
+
+    def test_github_release_external_delivery_can_attempt_upload_when_existing_asset_allowed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+            RecordingGitHubReleaseAssetPreflightHandler.requests = []
+            RecordingGitHubReleaseAssetPreflightHandler.existing_assets = [
+                {
+                    "id": 7,
+                    "name": "reverse-delivery.json",
+                    "url": "https://api.github.example.invalid/repos/owner/repo/releases/assets/7?api_secret=hidden",
+                    "browser_download_url": "https://example.invalid/body-not-recorded?download_secret=hidden",
+                }
+            ]
+            server = http.server.HTTPServer(("127.0.0.1", 0), RecordingGitHubReleaseAssetPreflightHandler)
+            server.timeout = 5
+            thread = threading.Thread(target=lambda: [server.handle_request(), server.handle_request(), server.handle_request()])
+            thread.daemon = True
+            thread.start()
+            try:
+                result = LocalDeliveryExecutor(
+                    DeliveryExecutorConfig(
+                        delivery_root=delivery_root,
+                        transaction_id="tx-github-release-asset-allowed",
+                        mode=DeliveryExecutionMode.APPLY,
+                        request_external_delivery=True,
+                        external_delivery_provider_id="github-release",
+                        external_delivery_provider_config={
+                            "repository": "owner/repo",
+                            "tag_name": "v0-duplicate",
+                            "asset_name": "reverse-delivery.json",
+                            "token": "ghp_asset_allowed_secret",
+                            "api_base_url": f"http://127.0.0.1:{server.server_port}",
+                            "allow_existing_asset": True,
+                            "timeout_seconds": 5,
+                        },
+                    )
+                ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+            finally:
+                thread.join(timeout=5)
+                server.server_close()
+
+            self.assertEqual(result.status, "external_delivered")
+            self.assertTrue(result.external_delivery_performed)
+            self.assertEqual(len(RecordingGitHubReleaseAssetPreflightHandler.requests), 3)
+            release_request, assets_request, upload_request = RecordingGitHubReleaseAssetPreflightHandler.requests
+            self.assertEqual(release_request["method"], "POST")
+            self.assertEqual(assets_request["method"], "GET")
+            self.assertEqual(upload_request["method"], "POST")
+            self.assertFalse(any(request["method"] == "DELETE" for request in RecordingGitHubReleaseAssetPreflightHandler.requests))
+            self.assertEqual(upload_request["path"], "/uploads/duplicate?name=reverse-delivery.json")
+            metadata = result.external_delivery_result.metadata if result.external_delivery_result else {}
+            self.assertTrue(metadata["check_existing_asset"])
+            self.assertTrue(metadata["allow_existing_asset"])
+            self.assertTrue(metadata["existing_asset_found"])
+            self.assertEqual(metadata["existing_asset_count"], 1)
+            self.assertEqual(metadata["existing_asset_overwrite_plan"]["status"], "requires_review")
+            self.assertTrue(metadata["existing_asset_overwrite_plan"]["allow_existing_asset"])
+            self.assertFalse(metadata["existing_asset_overwrite_plan"]["delete_performed"])
+            self.assertFalse(metadata["existing_asset_overwrite_plan"]["overwrite_performed"])
+            self.assertTrue(metadata["upload_request_attempted"])
+            self.assertTrue(metadata["upload_succeeded"])
+            serialized_result = json.dumps(result.external_delivery_result.to_dict(), ensure_ascii=False)
+            self.assertNotIn("ghp_asset_allowed_secret", serialized_result)
+            self.assertNotIn("asset_query=hidden", serialized_result)
+            self.assertNotIn("api_secret=hidden", serialized_result)
+            self.assertNotIn("download_secret=hidden", serialized_result)
+            self.assertNotIn("body-not-recorded", serialized_result)
+
+    def test_github_release_external_delivery_can_delete_existing_asset_then_upload_when_explicitly_approved(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+            RecordingGitHubReleaseAssetPreflightHandler.requests = []
+            RecordingGitHubReleaseAssetPreflightHandler.delete_status_code = 204
+            server = http.server.HTTPServer(("127.0.0.1", 0), RecordingGitHubReleaseAssetPreflightHandler)
+            RecordingGitHubReleaseAssetPreflightHandler.existing_assets = [
+                {
+                    "id": 7,
+                    "name": "reverse-delivery.json",
+                    "url": f"http://127.0.0.1:{server.server_port}/repos/owner/repo/releases/assets/7?api_secret=hidden",
+                    "browser_download_url": "https://example.invalid/body-not-recorded?download_secret=hidden",
+                }
+            ]
+            server.timeout = 5
+            thread = threading.Thread(
+                target=lambda: [server.handle_request(), server.handle_request(), server.handle_request(), server.handle_request()]
+            )
+            thread.daemon = True
+            thread.start()
+            try:
+                result = LocalDeliveryExecutor(
+                    DeliveryExecutorConfig(
+                        delivery_root=delivery_root,
+                        transaction_id="tx-github-release-asset-overwrite",
+                        mode=DeliveryExecutionMode.APPLY,
+                        request_external_delivery=True,
+                        external_delivery_provider_id="github-release",
+                        external_delivery_provider_config={
+                            "repository": "owner/repo",
+                            "tag_name": "v0-duplicate",
+                            "asset_name": "reverse-delivery.json",
+                            "token": "ghp_asset_overwrite_secret",
+                            "api_base_url": f"http://127.0.0.1:{server.server_port}",
+                            "approve_existing_asset_delete": True,
+                            "approve_replacement_upload": True,
+                            "expected_existing_asset_id": 7,
+                            "timeout_seconds": 5,
+                        },
+                    )
+                ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+            finally:
+                thread.join(timeout=5)
+                server.server_close()
+
+            self.assertEqual(result.status, "external_delivered")
+            self.assertTrue(result.external_delivery_performed)
+            self.assertEqual(len(RecordingGitHubReleaseAssetPreflightHandler.requests), 4)
+            release_request, assets_request, delete_request, upload_request = RecordingGitHubReleaseAssetPreflightHandler.requests
+            self.assertEqual(release_request["method"], "POST")
+            self.assertEqual(assets_request["method"], "GET")
+            self.assertEqual(delete_request["method"], "DELETE")
+            self.assertEqual(delete_request["path"], "/repos/owner/repo/releases/assets/7?api_secret=hidden")
+            self.assertEqual(upload_request["method"], "POST")
+            self.assertEqual(upload_request["path"], "/uploads/duplicate?name=reverse-delivery.json")
+            for request in RecordingGitHubReleaseAssetPreflightHandler.requests:
+                headers = {str(key).lower(): value for key, value in dict(request["headers"]).items()}
+                self.assertEqual(headers["authorization"], "Bearer ghp_asset_overwrite_secret")
+            metadata = result.external_delivery_result.metadata if result.external_delivery_result else {}
+            self.assertTrue(metadata["approve_existing_asset_delete"])
+            self.assertTrue(metadata["approve_replacement_upload"])
+            self.assertTrue(metadata["expected_existing_asset_id_configured"])
+            self.assertTrue(metadata["existing_asset_identity_matches"])
+            self.assertTrue(metadata["existing_asset_delete_request_attempted"])
+            self.assertTrue(metadata["existing_asset_delete_succeeded"])
+            self.assertEqual(metadata["existing_asset_delete_status_code"], 204)
+            self.assertTrue(metadata["existing_asset_delete_performed"])
+            self.assertTrue(metadata["existing_asset_overwrite_performed"])
+            self.assertTrue(metadata["upload_request_attempted"])
+            self.assertTrue(metadata["upload_succeeded"])
+            overwrite_plan = metadata["existing_asset_overwrite_plan"]
+            self.assertTrue(overwrite_plan["delete_performed"])
+            self.assertTrue(overwrite_plan["overwrite_performed"])
+            self.assertFalse(overwrite_plan["requires_explicit_approval"])
+            self.assertEqual(overwrite_plan["recommended_transition"], "review_github_release_asset_overwrite_result")
+            self.assertTrue(overwrite_plan["side_effect_policy"]["sends_delete_request"])
+            self.assertTrue(overwrite_plan["side_effect_policy"]["uploads_replacement_asset"])
+            ledger = json.loads((delivery_root / "external-delivery-idempotency-ledger.json").read_text(encoding="utf-8"))
+            stages = {stage["stage"]: stage for stage in ledger["entries"][0]["attempt_summary"]["stages"]}
+            self.assertEqual(stages["existing_asset_delete"]["attempt_count"], 1)
+            self.assertEqual(stages["existing_asset_delete"]["attempts"][0]["status_code"], 204)
+            self.assertEqual(stages["upload_request"]["attempts"][0]["status_code"], 201)
+            serialized_result = json.dumps(result.external_delivery_result.to_dict(), ensure_ascii=False)
+            self.assertNotIn("ghp_asset_overwrite_secret", serialized_result)
+            self.assertNotIn("api_secret=hidden", serialized_result)
+            self.assertNotIn("download_secret=hidden", serialized_result)
+            self.assertNotIn("body-not-recorded", serialized_result)
+
+    def test_github_release_external_delivery_blocks_overwrite_when_expected_asset_id_mismatches(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+            RecordingGitHubReleaseAssetPreflightHandler.requests = []
+            RecordingGitHubReleaseAssetPreflightHandler.delete_status_code = 204
+            server = http.server.HTTPServer(("127.0.0.1", 0), RecordingGitHubReleaseAssetPreflightHandler)
+            RecordingGitHubReleaseAssetPreflightHandler.existing_assets = [
+                {
+                    "id": 7,
+                    "name": "reverse-delivery.json",
+                    "url": f"http://127.0.0.1:{server.server_port}/repos/owner/repo/releases/assets/7?api_secret=hidden",
+                }
+            ]
+            server.timeout = 5
+            thread = threading.Thread(target=lambda: [server.handle_request(), server.handle_request()])
+            thread.daemon = True
+            thread.start()
+            try:
+                result = LocalDeliveryExecutor(
+                    DeliveryExecutorConfig(
+                        delivery_root=delivery_root,
+                        transaction_id="tx-github-release-asset-overwrite-id-mismatch",
+                        mode=DeliveryExecutionMode.APPLY,
+                        request_external_delivery=True,
+                        external_delivery_provider_id="github-release",
+                        external_delivery_provider_config={
+                            "repository": "owner/repo",
+                            "tag_name": "v0-duplicate",
+                            "asset_name": "reverse-delivery.json",
+                            "token": "ghp_asset_mismatch_secret",
+                            "api_base_url": f"http://127.0.0.1:{server.server_port}",
+                            "approve_existing_asset_delete": True,
+                            "approve_replacement_upload": True,
+                            "expected_existing_asset_id": 999,
+                            "timeout_seconds": 5,
+                        },
+                    )
+                ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+            finally:
+                thread.join(timeout=5)
+                server.server_close()
+
+            self.assertEqual(result.status, "external_delivery_blocked")
+            self.assertFalse(result.external_delivery_performed)
+            self.assertEqual(len(RecordingGitHubReleaseAssetPreflightHandler.requests), 2)
+            self.assertFalse(any(request["method"] == "DELETE" for request in RecordingGitHubReleaseAssetPreflightHandler.requests))
+            self.assertFalse(any(request["method"] == "POST" and str(request["path"]).startswith("/uploads/") for request in RecordingGitHubReleaseAssetPreflightHandler.requests))
+            metadata = result.external_delivery_result.metadata if result.external_delivery_result else {}
+            self.assertFalse(metadata["existing_asset_identity_matches"])
+            self.assertFalse(metadata["existing_asset_delete_request_attempted"])
+            self.assertFalse(metadata["existing_asset_delete_succeeded"])
+            self.assertFalse(metadata["existing_asset_overwrite_performed"])
+            self.assertIn("github_release_existing_asset_delete_approved", result.external_delivery_result.blocking_reasons)
+            serialized_result = json.dumps(result.external_delivery_result.to_dict(), ensure_ascii=False)
+            self.assertNotIn("ghp_asset_mismatch_secret", serialized_result)
+            self.assertNotIn("api_secret=hidden", serialized_result)
+
+    def test_github_release_external_delivery_does_not_upload_replacement_when_delete_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            delivery_root = root / "delivery"
+            RecordingGitHubReleaseAssetPreflightHandler.requests = []
+            RecordingGitHubReleaseAssetPreflightHandler.delete_status_code = 500
+            server = http.server.HTTPServer(("127.0.0.1", 0), RecordingGitHubReleaseAssetPreflightHandler)
+            RecordingGitHubReleaseAssetPreflightHandler.existing_assets = [
+                {
+                    "id": 7,
+                    "name": "reverse-delivery.json",
+                    "url": f"http://127.0.0.1:{server.server_port}/repos/owner/repo/releases/assets/7?api_secret=hidden",
+                }
+            ]
+            server.timeout = 5
+            thread = threading.Thread(target=lambda: [server.handle_request(), server.handle_request(), server.handle_request()])
+            thread.daemon = True
+            thread.start()
+            try:
+                result = LocalDeliveryExecutor(
+                    DeliveryExecutorConfig(
+                        delivery_root=delivery_root,
+                        transaction_id="tx-github-release-asset-delete-fails",
+                        mode=DeliveryExecutionMode.APPLY,
+                        request_external_delivery=True,
+                        external_delivery_provider_id="github-release",
+                        external_delivery_provider_config={
+                            "repository": "owner/repo",
+                            "tag_name": "v0-duplicate",
+                            "asset_name": "reverse-delivery.json",
+                            "token": "ghp_asset_delete_fail_secret",
+                            "api_base_url": f"http://127.0.0.1:{server.server_port}",
+                            "approve_existing_asset_delete": True,
+                            "approve_replacement_upload": True,
+                            "expected_existing_asset_id": 7,
+                            "timeout_seconds": 5,
+                        },
+                    )
+                ).execute([DeliveryArtifact(source_path=source, artifact_key="workspace_final")])
+            finally:
+                thread.join(timeout=5)
+                server.server_close()
+
+            self.assertEqual(result.status, "external_delivery_blocked")
+            self.assertFalse(result.external_delivery_performed)
+            self.assertEqual(len(RecordingGitHubReleaseAssetPreflightHandler.requests), 3)
+            self.assertEqual(RecordingGitHubReleaseAssetPreflightHandler.requests[2]["method"], "DELETE")
+            self.assertFalse(any(request["method"] == "POST" and str(request["path"]).startswith("/uploads/") for request in RecordingGitHubReleaseAssetPreflightHandler.requests))
+            metadata = result.external_delivery_result.metadata if result.external_delivery_result else {}
+            self.assertTrue(metadata["existing_asset_identity_matches"])
+            self.assertTrue(metadata["existing_asset_delete_request_attempted"])
+            self.assertFalse(metadata["existing_asset_delete_succeeded"])
+            self.assertEqual(metadata["existing_asset_delete_status_code"], 500)
+            self.assertFalse(metadata["upload_request_attempted"])
+            self.assertFalse(metadata["upload_succeeded"])
+            self.assertFalse(metadata["existing_asset_overwrite_performed"])
+            self.assertIn("github_release_existing_asset_delete_successful", result.external_delivery_result.blocking_reasons)
+            ledger = json.loads((delivery_root / "external-delivery-idempotency-ledger.json").read_text(encoding="utf-8"))
+            stages = {stage["stage"]: stage for stage in ledger["entries"][0]["attempt_summary"]["stages"]}
+            self.assertEqual(stages["existing_asset_delete"]["attempt_count"], 1)
+            self.assertEqual(stages["existing_asset_delete"]["attempts"][0]["status_code"], 500)
+            self.assertEqual(stages["upload_request"]["attempt_count"], 0)
+            serialized_result = json.dumps(result.external_delivery_result.to_dict(), ensure_ascii=False)
+            self.assertNotIn("ghp_asset_delete_fail_secret", serialized_result)
+            self.assertNotIn("api_secret=hidden", serialized_result)
+
     def test_external_delivery_duplicate_guard_blocks_provider_before_invocation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1444,6 +3065,14 @@ class LocalDeliveryExecutorTests(TestCase):
             self.assertEqual(journal["external_delivery_idempotency_key"], "delivery-key-1")
             self.assertEqual(Path(journal["external_delivery_result_path"]).resolve(), first_result_path.resolve())
             self.assertTrue(json.loads(first_result_path.read_text(encoding="utf-8"))["external_delivery_performed"])
+            ledger = json.loads((delivery_root / "external-delivery-idempotency-ledger.json").read_text(encoding="utf-8"))
+            self.assertEqual(ledger["entry_count"], 2)
+            self.assertTrue(ledger["entries"][0]["external_delivery_performed"])
+            self.assertFalse(ledger["entries"][0]["duplicate_guard_triggered"])
+            self.assertFalse(ledger["entries"][1]["external_delivery_performed"])
+            self.assertTrue(ledger["entries"][1]["duplicate_guard_triggered"])
+            self.assertFalse(ledger["entries"][1]["provider_factory_invoked"])
+            self.assertIn("duplicate_guard_blocks_provider_invocation", ledger["metadata"]["limitations"])
 
     def test_external_delivery_duplicate_guard_can_be_explicitly_overridden(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -64,6 +64,17 @@ class PlaywrightChromiumProvider:
                 "requires optional playwright dependency and browser installation",
             ],
             config=self.config.safe_summary(),
+            production_readiness={
+                "readiness_tier": "review-required",
+                "health_check_mode": "explicit-availability-or-launch-smoke",
+                "profile_lifecycle": "temporary-context-or-user-data-dir",
+                "proxy_policy": "not-provider-level",
+                "extension_policy": "launch-controlled",
+                "humanize_policy": "not-supported",
+                "session_recovery": "connect-over-cdp-or-launch-new-session",
+                "intended_use": "portable-native-browser-baseline",
+                "side_effect_boundary": "describe-and-metadata-matrix-are-side-effect-free; availability-and-launch-are-explicit",
+            },
         )
 
     def start(self) -> PlaywrightBrowserSessionAdapter:

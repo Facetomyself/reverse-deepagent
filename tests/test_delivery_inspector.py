@@ -34,11 +34,16 @@ class DeliveryTransactionInspectorTests(unittest.TestCase):
         self.assertEqual(inspection["state_snapshot"]["transaction_id"], "tx-local")
         self.assertEqual(inspection["state_snapshot"]["state"], "local_applied")
         self.assertEqual(inspection["transition_plan"]["recommended_transition"], "review_or_commit_manifest_revision")
+        self.assertEqual(inspection["rollback_state"]["phase"], "local_delivery_applied")
+        self.assertEqual(inspection["rollback_state"]["recommended_action"], "review_or_commit_manifest_revision")
         self.assertTrue(inspection["side_effect_policy"]["read_only"])
         self.assertFalse(inspection["side_effect_policy"]["files_mutated"])
         self.assertFalse(inspection["side_effect_policy"]["external_delivery_performed"])
         self.assertTrue(inspection["artifacts"]["transaction_journal"]["loaded"])
+        self.assertIn("transaction_lock", inspection["missing_artifacts"])
         self.assertIn("external_delivery_result", inspection["missing_artifacts"])
+        self.assertIn("external_delivery_idempotency_ledger", inspection["missing_artifacts"])
+        self.assertIn("delivery_transition_execution", inspection["missing_artifacts"])
 
     def test_inspector_loads_external_delivery_result_and_commit_record(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -51,6 +56,17 @@ class DeliveryTransactionInspectorTests(unittest.TestCase):
                 json.dumps({"transaction_id": "tx-commit", "external_delivery_performed": True}),
                 encoding="utf-8",
             )
+            (root / "external-delivery-idempotency-ledger.json").write_text(
+                json.dumps(
+                    {
+                        "transaction_id": "tx-commit",
+                        "ledger_path": str(root / "external-delivery-idempotency-ledger.json"),
+                        "entry_count": 1,
+                        "entries": [{"transaction_id": "tx-commit", "external_delivery_performed": True}],
+                    }
+                ),
+                encoding="utf-8",
+            )
             (root / "backend-artifact-manifest-transaction-commit.json").write_text(
                 json.dumps({"source_transaction_id": "tx-commit", "committed": True}),
                 encoding="utf-8",
@@ -60,8 +76,84 @@ class DeliveryTransactionInspectorTests(unittest.TestCase):
 
         self.assertTrue(inspection["ok"])
         self.assertEqual(inspection["state_snapshot"]["state"], "committed")
+        self.assertEqual(inspection["rollback_state"]["phase"], "external_delivery_performed")
+        self.assertTrue(inspection["rollback_state"]["terminal"])
         self.assertIn("external_delivered", inspection["state_snapshot"]["completed_states"])
+        self.assertTrue(inspection["state_snapshot"]["flags"]["external_delivery_idempotency_ledger_recorded"])
+        self.assertIn("external_delivery_idempotency_ledger", inspection["state_snapshot"]["evidence_paths"])
         self.assertEqual(inspection["transition_plan"]["recommended_transition"], "no_next_transition")
+
+    def test_inspector_loads_transaction_lock_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            lock_path = root / "delivery-transaction-lock.json"
+            lock_path.write_text(
+                json.dumps(
+                    {
+                        "transaction_id": "tx-lock",
+                        "status": "acquired",
+                        "operation": "local_delivery_apply",
+                        "owner": "agent-a",
+                        "resume_token": "resume-a",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            inspection = inspect_delivery_transaction_root(root).to_dict()
+
+        self.assertFalse(inspection["ok"])
+        self.assertIn("transaction_journal", inspection["missing_artifacts"])
+        self.assertTrue(inspection["artifacts"]["transaction_lock"]["loaded"])
+        self.assertIn("owner", inspection["artifacts"]["transaction_lock"]["keys"])
+        self.assertIn("resume_token", inspection["artifacts"]["transaction_lock"]["keys"])
+
+    def test_inspector_loads_transaction_lock_release_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            release_path = root / "delivery-transaction-lock-release.json"
+            release_path.write_text(
+                json.dumps(
+                    {
+                        "transaction_id": "tx-lock-release",
+                        "status": "released",
+                        "operation": "release_delivery_transaction_lock",
+                        "lock_removed": True,
+                        "stale_lock_detected": True,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            inspection = inspect_delivery_transaction_root(root).to_dict()
+
+        self.assertFalse(inspection["ok"])
+        self.assertIn("transaction_journal", inspection["missing_artifacts"])
+        self.assertTrue(inspection["artifacts"]["transaction_lock_release"]["loaded"])
+        self.assertIn("lock_removed", inspection["artifacts"]["transaction_lock_release"]["keys"])
+        self.assertIn("stale_lock_detected", inspection["artifacts"]["transaction_lock_release"]["keys"])
+
+    def test_inspector_loads_resume_plan_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            resume_path = root / "delivery-resume-plan.json"
+            resume_path.write_text(
+                json.dumps(
+                    {
+                        "transaction_id": "tx-resume-plan",
+                        "status": "written",
+                        "recommended_resume_action": "review_or_commit_manifest_revision",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            inspection = inspect_delivery_transaction_root(root).to_dict()
+
+        self.assertFalse(inspection["ok"])
+        self.assertTrue(inspection["artifacts"]["delivery_resume_plan"]["loaded"])
+        self.assertIn("recommended_resume_action", inspection["artifacts"]["delivery_resume_plan"]["keys"])
+        self.assertIn("transaction_journal", inspection["missing_artifacts"])
 
     def test_inspector_reports_malformed_artifact_without_raising(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

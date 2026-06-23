@@ -1,4 +1,5 @@
 import json
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -9,12 +10,539 @@ from reverse_deepagent.subagents.debugger import (
     build_debugger_subagent,
     load_debugger_prompt,
 )
-from reverse_deepagent.tools.debugger_tools import make_review_debugger_artifacts_tool
+from reverse_deepagent.tools.debugger_tools import (
+    make_record_paused_session_automatic_loop_executor_approval_tool,
+    make_record_paused_session_automatic_loop_multi_iteration_executor_approval_tool,
+    make_record_paused_session_automatic_loop_multi_iteration_transaction_journal_tool,
+    make_record_paused_session_automatic_loop_transaction_journal_tool,
+    make_review_debugger_artifacts_tool,
+    make_review_paused_session_automatic_loop_bounded_executor_gate_tool,
+    make_review_paused_session_automatic_loop_multi_iteration_bounded_executor_gate_tool,
+    make_review_paused_session_automatic_loop_multi_iteration_transaction_preflight_tool,
+    make_review_paused_session_automatic_loop_transaction_preflight_tool,
+)
 
 
 class ToolFriendlyFakeModel:
     def bind_tools(self, tools, *, tool_choice=None, **kwargs):  # noqa: D401, ANN001
         return self
+
+
+def _ready_automatic_loop_executor_approval_plan() -> dict:
+    return {
+        "schema_version": "reverse-deepagent.paused-session-automatic-loop-executor-approval-plan.v1",
+        "status": "ready_for_review",
+        "ready_for_review": True,
+        "approval_plan_ready_for_review": True,
+        "approval_plan_id": "automatic-loop-executor-approval-plan:preflight-1",
+        "preflight_id": "preflight-1",
+        "plan_id": "plan-1",
+        "loop_id": "loop-1",
+        "workflow_id": "workflow-1",
+        "pause_session_id": "pause-1",
+        "target_id": "target-1",
+        "approved_iteration_count": 1,
+        "max_approved_iterations": 2,
+        "approved_iterations": [
+            {
+                "iteration_index": 0,
+                "workflow_step_index": 0,
+                "method": "Debugger.stepOver",
+                "fingerprint": "step-0",
+                "requires_checkpoint_after_iteration": True,
+            }
+        ],
+        "executor_input_gates": {
+            "ready_to_execute_now": False,
+            "approval_recorded": False,
+            "transaction_started": False,
+            "journal_written": False,
+        },
+        "future_executor_contract": {
+            "implemented": False,
+            "executor_name": "execute_paused_session_automatic_loop",
+        },
+        "transaction_plan": {
+            "transaction_id": "automatic-loop-executor-transaction:preflight-1",
+            "transaction_started": False,
+            "journal_written_now": False,
+        },
+        "blockers": [],
+        "next_action": "review_future_bounded_automatic_loop_executor_approval_transaction",
+    }
+
+
+def _ready_automatic_loop_multi_iteration_executor_approval_plan() -> dict:
+    return {
+        "schema_version": "reverse-deepagent.paused-session-automatic-loop-multi-iteration-executor-approval-plan.v1",
+        "status": "ready_for_review",
+        "ready_for_review": True,
+        "approval_plan_ready_for_review": True,
+        "approval_plan_id": "automatic-loop-multi-iteration-executor-approval-plan:ready",
+        "execution_plan_id": "automatic-loop-multi-iteration-execution-plan:ready",
+        "preflight_id": "automatic-loop-multi-iteration-preflight:ready",
+        "policy_id": "automatic-loop-policy:ready",
+        "approved_iteration_count": 2,
+        "max_approved_iterations": 2,
+        "approved_iterations": [
+            {
+                "iteration_index": 0,
+                "source_iteration_index": 10,
+                "workflow_step_index": 0,
+                "method": "Debugger.stepOver",
+                "fingerprint": "step-0",
+                "requires_checkpoint_after_iteration": True,
+            },
+            {
+                "iteration_index": 1,
+                "source_iteration_index": 11,
+                "workflow_step_index": 1,
+                "method": "Debugger.stepInto",
+                "fingerprint": "step-1",
+                "requires_checkpoint_after_iteration": True,
+            },
+        ],
+        "executor_input_gates": {
+            "ready_to_execute_now": False,
+            "automatic_multi_iteration_executor_implemented": False,
+            "automatic_multi_iteration_execution_allowed_now": False,
+            "approval_recorded": False,
+            "requires_transaction_journal": True,
+            "requires_per_iteration_review_gate": True,
+            "requires_per_iteration_checkpoint_gate": True,
+            "requires_fresh_live_callframe_per_iteration": True,
+            "requires_stop_after_each_checkpoint": True,
+        },
+        "future_executor_contract": {
+            "implemented": False,
+            "executor_name": "execute_paused_session_automatic_loop_multi_iteration",
+        },
+        "transaction_plan": {
+            "transaction_id": "automatic-loop-multi-iteration-transaction:ready",
+            "transaction_started": False,
+            "journal_written_now": False,
+        },
+        "side_effect_policy": {
+            "automatic_multi_iteration_loop": False,
+            "loop_advanced": False,
+            "queue_advanced": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        },
+        "blockers": [],
+        "next_action": "review_future_paused_session_automatic_loop_multi_iteration_executor_approval_transaction",
+    }
+
+
+def _ready_automatic_loop_multi_iteration_executor_approval_record() -> dict:
+    return {
+        "schema_version": "reverse-deepagent.paused-session-automatic-loop-multi-iteration-executor-approval-record.v1",
+        "status": "written",
+        "approval_recorded": True,
+        "approved_for_execution": True,
+        "approval_record_id": "automatic-loop-multi-iteration-executor-approval-record:abc123",
+        "approval_plan_id": "automatic-loop-multi-iteration-executor-approval-plan:ready",
+        "execution_plan_id": "automatic-loop-multi-iteration-execution-plan:ready",
+        "preflight_id": "automatic-loop-multi-iteration-preflight:ready",
+        "policy_id": "automatic-loop-policy:ready",
+        "transaction_id": "automatic-loop-multi-iteration-transaction:ready",
+        "decision": "approved",
+        "reviewer": "alice",
+        "approved_iterations": [
+            {
+                "iteration_index": 0,
+                "source_iteration_index": 10,
+                "workflow_step_index": 0,
+                "method": "Debugger.stepOver",
+                "fingerprint": "step-0",
+                "executed_now": False,
+                "requires_checkpoint_after_iteration": True,
+                "requires_fresh_live_callframe": True,
+            },
+            {
+                "iteration_index": 1,
+                "source_iteration_index": 11,
+                "workflow_step_index": 1,
+                "method": "Debugger.stepInto",
+                "fingerprint": "step-1",
+                "executed_now": False,
+                "requires_checkpoint_after_iteration": True,
+                "requires_fresh_live_callframe": True,
+            },
+        ],
+        "executor_input_gates": {
+            "ready_to_execute_now": False,
+            "approval_recorded": True,
+            "approved_for_execution": True,
+            "transaction_started": False,
+            "journal_written": False,
+            "automatic_multi_iteration_executor_implemented": False,
+            "automatic_multi_iteration_execution_allowed_now": False,
+        },
+        "side_effect_policy": {
+            "writes_approval_record": True,
+            "writes_transaction_journal": False,
+            "transaction_started": False,
+            "automatic_loop_executed": False,
+            "automatic_multi_iteration_loop": False,
+            "cdp_command_sent": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        },
+        "blockers": [],
+    }
+
+
+def _ready_automatic_loop_executor_approval_record() -> dict:
+    return {
+        "schema_version": "reverse-deepagent.paused-session-automatic-loop-executor-approval-record.v1",
+        "status": "written",
+        "approval_recorded": True,
+        "approved_for_execution": True,
+        "approval_record_id": "automatic-loop-executor-approval-record:abc123",
+        "approval_plan_id": "automatic-loop-executor-approval-plan:preflight-1",
+        "preflight_id": "preflight-1",
+        "plan_id": "plan-1",
+        "loop_id": "loop-1",
+        "workflow_id": "workflow-1",
+        "pause_session_id": "pause-1",
+        "target_id": "target-1",
+        "decision": "approved",
+        "reviewer": "alice",
+        "approved_iterations": [
+            {
+                "iteration_index": 0,
+                "workflow_step_index": 0,
+                "method": "Debugger.stepOver",
+                "fingerprint": "step-0",
+                "executed_now": False,
+                "requires_checkpoint_after_iteration": True,
+            }
+        ],
+        "executor_input_gates": {
+            "ready_to_execute_now": False,
+            "approval_recorded": True,
+            "approved_for_execution": True,
+            "transaction_started": False,
+            "journal_written": False,
+        },
+        "side_effect_policy": {
+            "writes_approval_record": True,
+            "writes_transaction_journal": False,
+            "transaction_started": False,
+            "automatic_loop_executed": False,
+            "cdp_command_sent": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        },
+        "blockers": [],
+    }
+
+
+def _ready_automatic_loop_multi_iteration_transaction_preflight() -> dict:
+    return {
+        "schema_version": "reverse-deepagent.paused-session-automatic-loop-multi-iteration-transaction-preflight.v1",
+        "status": "ready_for_review",
+        "ready_for_review": True,
+        "transaction_preflight_ready_for_review": True,
+        "transaction_preflight_id": "automatic-loop-multi-iteration-transaction-preflight:ready",
+        "approval_record_id": "automatic-loop-multi-iteration-executor-approval-record:abc123",
+        "approval_plan_id": "automatic-loop-multi-iteration-executor-approval-plan:ready",
+        "execution_plan_id": "automatic-loop-multi-iteration-execution-plan:ready",
+        "preflight_id": "automatic-loop-multi-iteration-preflight:ready",
+        "policy_id": "automatic-loop-policy:ready",
+        "transaction_id": "automatic-loop-multi-iteration-transaction:ready",
+        "transaction_plan": {
+            "transaction_id": "automatic-loop-multi-iteration-transaction:ready",
+            "idempotency_key": "automatic-loop-multi-iteration-transaction:ready",
+            "transaction_started": False,
+            "journal_written_now": False,
+            "journal_artifact": "workspace/paused-session-automatic-loop-multi-iteration-executor-journal.json",
+            "result_artifact": "workspace/paused-session-automatic-loop-multi-iteration-execution-result.json",
+            "ready_to_write_now": False,
+            "future_journal_writer_implemented": False,
+        },
+        "journal_writer_input_gates": {
+            "approval_plan_verified": True,
+            "approval_record_verified": True,
+            "ready_for_review": True,
+            "ready_to_write_now": False,
+            "transaction_started": False,
+            "journal_written": False,
+            "automatic_multi_iteration_loop": False,
+            "requires_per_iteration_review_gate": True,
+            "requires_checkpoint_after_each_iteration": True,
+            "requires_fresh_live_callframe_per_iteration": True,
+            "requires_stop_after_each_checkpoint": True,
+        },
+        "planned_journal_entries": [
+            {
+                "entry_index": 0,
+                "entry_kind": "planned_multi_iteration_step",
+                "iteration_index": 0,
+                "source_iteration_index": 10,
+                "workflow_step_index": 0,
+                "method": "Debugger.stepOver",
+                "fingerprint": "step-0",
+                "would_write_now": False,
+                "requires_checkpoint_after_iteration": True,
+                "requires_fresh_live_callframe": True,
+            },
+            {
+                "entry_index": 1,
+                "entry_kind": "planned_multi_iteration_step",
+                "iteration_index": 1,
+                "source_iteration_index": 11,
+                "workflow_step_index": 1,
+                "method": "Debugger.stepInto",
+                "fingerprint": "step-1",
+                "would_write_now": False,
+                "requires_checkpoint_after_iteration": True,
+                "requires_fresh_live_callframe": True,
+            },
+        ],
+        "blockers": [],
+        "side_effect_policy": {
+            "read_only": True,
+            "writes_transaction_journal": False,
+            "transaction_started": False,
+            "journal_written": False,
+            "automatic_loop_executed": False,
+            "automatic_multi_iteration_loop": False,
+            "cdp_command_sent": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        },
+    }
+
+
+def _ready_automatic_loop_multi_iteration_transaction_journal() -> dict:
+    return {
+        "schema_version": "reverse-deepagent.paused-session-automatic-loop-multi-iteration-transaction-journal.v1",
+        "status": "written",
+        "journal_written": True,
+        "transaction_started": True,
+        "journal_id": "automatic-loop-multi-iteration-transaction-journal:ready",
+        "transaction_preflight_id": "automatic-loop-multi-iteration-transaction-preflight:ready",
+        "approval_record_id": "automatic-loop-multi-iteration-executor-approval-record:abc123",
+        "approval_plan_id": "automatic-loop-multi-iteration-executor-approval-plan:ready",
+        "execution_plan_id": "automatic-loop-multi-iteration-execution-plan:ready",
+        "preflight_id": "automatic-loop-multi-iteration-preflight:ready",
+        "policy_id": "automatic-loop-policy:ready",
+        "transaction_id": "automatic-loop-multi-iteration-transaction:ready",
+        "journal_entries": [
+            {
+                "entry_index": 0,
+                "entry_kind": "transaction_started",
+                "transaction_id": "automatic-loop-multi-iteration-transaction:ready",
+                "transaction_preflight_id": "automatic-loop-multi-iteration-transaction-preflight:ready",
+                "approval_record_id": "automatic-loop-multi-iteration-executor-approval-record:abc123",
+                "automatic_loop_executed": False,
+                "automatic_multi_iteration_loop": False,
+            },
+            {
+                "entry_index": 1,
+                "entry_kind": "planned_multi_iteration_step_journaled",
+                "iteration_index": 0,
+                "source_iteration_index": 10,
+                "workflow_step_index": 0,
+                "method": "Debugger.stepOver",
+                "fingerprint": "step-0",
+                "executed_now": False,
+                "requires_per_iteration_review_gate": True,
+                "requires_fresh_live_callframe_before_execution": True,
+                "requires_checkpoint_after_iteration": True,
+                "requires_stop_after_checkpoint": True,
+            },
+            {
+                "entry_index": 2,
+                "entry_kind": "planned_multi_iteration_step_journaled",
+                "iteration_index": 1,
+                "source_iteration_index": 11,
+                "workflow_step_index": 1,
+                "method": "Debugger.stepInto",
+                "fingerprint": "step-1",
+                "executed_now": False,
+                "requires_per_iteration_review_gate": True,
+                "requires_fresh_live_callframe_before_execution": True,
+                "requires_checkpoint_after_iteration": True,
+                "requires_stop_after_checkpoint": True,
+            },
+        ],
+        "journal_summary": {
+            "entry_count": 3,
+            "planned_entry_count": 3,
+            "planned_iteration_count": 2,
+            "transaction_started": True,
+            "journal_written": True,
+            "automatic_loop_executed": False,
+            "automatic_multi_iteration_loop": False,
+            "requires_bounded_executor_gate_followup": True,
+        },
+        "executor_input_gates": {
+            "ready_to_execute_now": False,
+            "approval_plan_verified": True,
+            "approval_record_verified": True,
+            "transaction_started": True,
+            "journal_written": True,
+            "automatic_loop_executed": False,
+            "automatic_multi_iteration_loop": False,
+            "automatic_multi_iteration_executor_implemented": False,
+            "automatic_multi_iteration_execution_allowed_now": False,
+            "requires_per_iteration_review_gate": True,
+            "requires_fresh_live_callframe_per_iteration": True,
+            "requires_checkpoint_after_each_iteration": True,
+            "requires_stop_after_each_checkpoint": True,
+            "requires_bounded_executor_review": True,
+        },
+        "blockers": [],
+        "side_effect_policy": {
+            "writes_transaction_journal": True,
+            "transaction_started": True,
+            "journal_written": True,
+            "automatic_loop_executed": False,
+            "automatic_multi_iteration_loop": False,
+            "automatic_multi_iteration_executor_implemented": False,
+            "automatic_multi_iteration_execution_allowed_now": False,
+            "per_iteration_review_gate_required": True,
+            "checkpoint_after_each_iteration_required": True,
+            "fresh_live_callframe_per_iteration_required": True,
+            "stop_after_each_checkpoint_required": True,
+            "cdp_command_sent": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        },
+    }
+
+
+def _ready_automatic_loop_transaction_preflight() -> dict:
+    return {
+        "schema_version": "reverse-deepagent.paused-session-automatic-loop-transaction-preflight.v1",
+        "status": "ready_for_review",
+        "ready_for_review": True,
+        "transaction_preflight_ready_for_review": True,
+        "transaction_preflight_id": "automatic-loop-transaction-preflight:record-1",
+        "approval_record_id": "automatic-loop-executor-approval-record:abc123",
+        "approval_plan_id": "automatic-loop-executor-approval-plan:preflight-1",
+        "preflight_id": "preflight-1",
+        "plan_id": "plan-1",
+        "loop_id": "loop-1",
+        "workflow_id": "workflow-1",
+        "pause_session_id": "pause-1",
+        "target_id": "target-1",
+        "transaction_plan": {
+            "transaction_id": "automatic-loop-executor-transaction:preflight-1",
+            "idempotency_key": "automatic-loop-executor-transaction:preflight-1",
+            "transaction_started": False,
+            "journal_written_now": False,
+            "journal_artifact": "workspace/paused-session-automatic-loop-executor-journal.json",
+            "result_artifact": "workspace/paused-session-automatic-loop-execution-result.json",
+            "ready_for_journal_writer_review": True,
+            "ready_to_write_now": False,
+            "future_journal_writer_implemented": False,
+        },
+        "journal_writer_input_gates": {
+            "approval_plan_verified": True,
+            "approval_record_verified": True,
+            "ready_for_review": True,
+            "ready_to_write_now": False,
+            "transaction_started": False,
+            "journal_written": False,
+            "automatic_loop_executed": False,
+        },
+        "planned_journal_entries": [
+            {
+                "entry_index": 0,
+                "entry_kind": "planned_iteration",
+                "iteration_index": 0,
+                "workflow_step_index": 0,
+                "method": "Debugger.stepOver",
+                "fingerprint": "step-0",
+                "would_write_now": False,
+                "requires_checkpoint_after_iteration": True,
+            }
+        ],
+        "side_effect_policy": {
+            "read_only": True,
+            "writes_transaction_journal": False,
+            "transaction_started": False,
+            "automatic_loop_executed": False,
+            "cdp_command_sent": False,
+            "cdp_target_attached": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        },
+        "blockers": [],
+    }
+
+
+def _ready_automatic_loop_transaction_journal() -> dict:
+    return {
+        "schema_version": "reverse-deepagent.paused-session-automatic-loop-transaction-journal.v1",
+        "status": "written",
+        "journal_written": True,
+        "transaction_started": True,
+        "journal_id": "automatic-loop-transaction-journal:abc123",
+        "transaction_preflight_id": "automatic-loop-transaction-preflight:record-1",
+        "approval_record_id": "automatic-loop-executor-approval-record:abc123",
+        "approval_plan_id": "automatic-loop-executor-approval-plan:preflight-1",
+        "preflight_id": "preflight-1",
+        "transaction_id": "automatic-loop-executor-transaction:preflight-1",
+        "plan_id": "plan-1",
+        "loop_id": "loop-1",
+        "workflow_id": "workflow-1",
+        "pause_session_id": "pause-1",
+        "target_id": "target-1",
+        "journal_entries": [
+            {
+                "entry_index": 0,
+                "entry_kind": "transaction_started",
+                "transaction_id": "automatic-loop-executor-transaction:preflight-1",
+                "automatic_loop_executed": False,
+            },
+            {
+                "entry_index": 1,
+                "entry_kind": "planned_iteration_journaled",
+                "iteration_index": 0,
+                "workflow_step_index": 0,
+                "method": "Debugger.stepOver",
+                "fingerprint": "step-0",
+                "executed_now": False,
+                "requires_fresh_live_callframe_before_execution": True,
+                "requires_checkpoint_after_iteration": True,
+            },
+        ],
+        "journal_summary": {
+            "entry_count": 2,
+            "planned_entry_count": 2,
+            "transaction_started": True,
+            "journal_written": True,
+            "automatic_loop_executed": False,
+            "requires_bounded_executor_followup": True,
+        },
+        "executor_input_gates": {
+            "ready_to_execute_now": False,
+            "approval_record_verified": True,
+            "transaction_started": True,
+            "journal_written": True,
+            "automatic_loop_executed": False,
+            "requires_fresh_live_callframe_per_iteration": True,
+            "requires_checkpoint_after_each_iteration": True,
+            "requires_bounded_executor_review": True,
+        },
+        "side_effect_policy": {
+            "writes_transaction_journal": True,
+            "transaction_started": True,
+            "journal_written": True,
+            "automatic_loop_executed": False,
+            "cdp_command_sent": False,
+            "cdp_target_attached": False,
+            "debugger_event_subscribed": False,
+            "calls_mcp": False,
+            "mobile_runtime_used": False,
+        },
+        "blockers": [],
+    }
 
 
 class DebuggerSubagentTests(unittest.TestCase):
@@ -31,6 +559,21 @@ class DebuggerSubagentTests(unittest.TestCase):
                     "reason": "live_paused_session_required",
                     "requested_action": "resume",
                     "live_continuation_available": False,
+                    "live_session_diagnostics": {
+                        "live_session_available": False,
+                        "debugger_session_lifecycle": "retained_paused",
+                        "same_process_required_for_live_action": True,
+                    },
+                    "target_diagnostics": {
+                        "target_attached": False,
+                        "cdp_target_available": False,
+                        "target_attached_source": "durable_snapshot_inspect_only",
+                    },
+                    "callframe_diagnostics": {
+                        "stable_callframe_required": False,
+                        "stable_callframe_available": False,
+                        "callframe_count": 1,
+                    },
                 },
             },
             "callframes": [
@@ -49,6 +592,10 @@ class DebuggerSubagentTests(unittest.TestCase):
         self.assertIn("paused_session_action_blocked", result["blockers"])
         self.assertEqual(result["next_action"], "use_live_same_process_paused_session_before_resume_step_or_evaluate")
         self.assertEqual(result["summary"]["session_id"], "durable-1")
+        self.assertFalse(result["summary"]["live_session_diagnostics"]["live_session_available"])
+        self.assertTrue(result["summary"]["live_session_diagnostics"]["same_process_required_for_live_action"])
+        self.assertEqual(result["summary"]["target_diagnostics"]["target_attached_source"], "durable_snapshot_inspect_only")
+        self.assertFalse(result["review_required_items"][0]["diagnostics"]["target_attached"])
         self.assertEqual(result["summary"]["callframe_count"], 1)
         self.assertEqual(result["summary"]["top_callframes"][0]["function_name"], "buildSign")
         self.assertEqual(result["review_required_items"][0]["code"], "paused_session_action_blocked")
@@ -83,6 +630,2278 @@ class DebuggerSubagentTests(unittest.TestCase):
         self.assertTrue(result["summary"]["live_continuation_available"])
         self.assertEqual(result["summary"]["timeline_event_counts"]["paused"], 1)
 
+    def test_review_debugger_artifacts_blocks_live_continuation_preflight(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_live_continuation_preflight": {
+                "status": "blocked",
+                "preflight": {
+                    "status": "blocked",
+                    "source": "durable_snapshot",
+                    "requested_action": "resume",
+                    "live_continuation_available": False,
+                    "cross_process_live_continuation_supported": False,
+                    "blockers": ["live_paused_session_required", "target_not_attached"],
+                    "reason": "live_paused_session_required",
+                    "live_session_diagnostics": {
+                        "live_session_available": False,
+                        "debugger_session_lifecycle": "retained_paused",
+                        "same_process_required_for_live_action": True,
+                    },
+                    "target_diagnostics": {
+                        "target_attached": False,
+                        "cdp_target_available": False,
+                        "target_attached_source": "not_attached",
+                    },
+                    "callframe_diagnostics": {
+                        "stable_callframe_required": True,
+                        "stable_callframe_available": False,
+                        "selected_callframe_has_id": False,
+                    },
+                    "action_capability": {
+                        "requested_action": "resume",
+                        "is_live_action": True,
+                        "resume_supported": False,
+                    },
+                },
+                "side_effect_policy": {
+                    "read_only": True,
+                    "cdp_command_sent": False,
+                    "browser_resumed": False,
+                    "debugger_stepped": False,
+                    "callframe_evaluated": False,
+                },
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertTrue(result["blocked"])
+        self.assertIn("paused_session_live_preflight_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "reproduce_pause_in_current_process_before_live_action")
+        self.assertFalse(result["summary"]["live_continuation_available"])
+        self.assertFalse(result["summary"]["cross_process_live_continuation_supported"])
+        self.assertEqual(result["summary"]["preflight_blockers"], ["live_paused_session_required", "target_not_attached"])
+        self.assertFalse(result["summary"]["live_session_diagnostics"]["live_session_available"])
+        self.assertEqual(result["summary"]["target_diagnostics"]["target_attached_source"], "not_attached")
+        self.assertTrue(result["summary"]["callframe_diagnostics"]["stable_callframe_required"])
+        self.assertTrue(result["summary"]["action_capability"]["is_live_action"])
+        self.assertTrue(result["review_required_items"][0]["diagnostics"]["same_process_required_for_live_action"])
+        self.assertTrue(result["side_effect_policy"]["read_only"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+        self.assertFalse(result["side_effect_policy"]["browser_resumed"])
+        self.assertFalse(result["side_effect_policy"]["debugger_stepped"])
+        self.assertFalse(result["side_effect_policy"]["callframe_evaluated"])
+
+    def test_review_debugger_artifacts_warns_for_attach_ready_without_execution_plan(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_target_attach_readiness": {
+                "status": "ready_for_attach_review",
+                "readiness": {
+                    "status": "ready_for_attach_review",
+                    "source": "durable_snapshot",
+                    "pause_session_id": "attach-ready-1",
+                    "requested_action": "evaluate",
+                    "target_attach_readiness_proven": True,
+                    "cross_process_live_continuation_supported": False,
+                    "cross_process_execution_ready": False,
+                    "blockers": ["stable_live_callframe_unavailable", "cross_process_live_continuation_not_implemented"],
+                    "target_correlation": {
+                        "expected_url": "https://example.test/app.js",
+                        "candidate_count": 1,
+                        "url_match": True,
+                    },
+                    "attachability": {
+                        "target_id_available": True,
+                        "would_attach_cdp_target": False,
+                    },
+                    "callframe_recovery": {
+                        "stable_live_callframe_available": False,
+                        "requires_new_paused_event_after_attach": True,
+                    },
+                },
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("target_attach_ready_but_execution_plan_not_observed", result["warnings"])
+        self.assertEqual(result["next_action"], "plan_cross_process_execution_after_target_attach_readiness")
+        readiness = result["summary"]["target_attach_readiness"]
+        self.assertTrue(readiness["target_attach_readiness_proven"])
+        self.assertFalse(readiness["cross_process_execution_ready"])
+        self.assertEqual(readiness["expected_url"], "https://example.test/app.js")
+        self.assertTrue(readiness["target_id_available"])
+        self.assertFalse(readiness["would_attach_cdp_target"])
+        self.assertEqual(result["review_required_items"][0]["code"], "target_attach_ready_but_execution_plan_not_observed")
+        self.assertFalse(result["review_required_items"][0]["attach_readiness_diagnostics"]["cross_process_execution_ready"])
+        self.assertTrue(result["side_effect_policy"]["read_only"])
+
+    def test_review_debugger_artifacts_blocks_target_attach_readiness_failure(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_target_attach_readiness": {
+                "readiness": {
+                    "status": "blocked",
+                    "source": "provided_artifact",
+                    "pause_session_id": "attach-blocked-1",
+                    "target_attach_readiness_proven": False,
+                    "cross_process_execution_ready": False,
+                    "blockers": ["target_url_mismatch", "cross_process_live_continuation_not_implemented"],
+                    "target_correlation": {
+                        "expected_url": "https://example.test/app.js",
+                        "candidate_count": 1,
+                        "url_match": False,
+                    },
+                    "attachability": {
+                        "target_id_available": False,
+                        "would_attach_cdp_target": False,
+                    },
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_target_attach_readiness_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "collect_target_candidates_or_match_paused_url_before_attach_review")
+        self.assertFalse(result["summary"]["target_attach_readiness"]["target_attach_readiness_proven"])
+        self.assertFalse(result["review_required_items"][0]["attach_readiness_diagnostics"]["url_match"])
+
+    def test_review_debugger_artifacts_warns_for_cross_process_execution_plan(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_cross_process_execution_plan": {
+                "status": "ready_for_executor_review",
+                "plan": {
+                    "status": "ready_for_executor_review",
+                    "pause_session_id": "cross-plan-1",
+                    "requested_action": "evaluate",
+                    "execution_plan_ready_for_review": True,
+                    "cross_process_execution_ready": False,
+                    "cross_process_executor_implemented": True,
+                    "cross_process_action_supported": True,
+                    "target_attach_readiness_proven": True,
+                    "blockers": [],
+                    "target_attach_readiness_summary": {
+                        "expected_url": "https://example.test/app.js",
+                        "candidate_count": 1,
+                        "selected_target": {"target_id": "target-1", "type": "page"},
+                        "target_id_available": True,
+                    },
+                    "callframe_recovery_plan": {
+                        "requires_new_paused_event_after_attach": True,
+                    },
+                    "review_gates": {
+                        "attach_probe_review_required": True,
+                        "action_execution_review_required": True,
+                    },
+                },
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("cross_process_execution_plan_ready_but_attach_probe_not_observed", result["warnings"])
+        self.assertEqual(result["next_action"], "run_reviewed_cross_process_attach_probe_next")
+        plan = result["summary"]["cross_process_execution_plan"]
+        self.assertTrue(plan["execution_plan_ready_for_review"])
+        self.assertFalse(plan["cross_process_execution_ready"])
+        self.assertTrue(plan["cross_process_executor_implemented"])
+        self.assertTrue(plan["target_id_available"])
+        self.assertTrue(plan["requires_new_paused_event_after_attach"])
+        self.assertTrue(result["review_required_items"][0]["cross_process_execution_plan_diagnostics"]["execution_plan_ready_for_review"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_warns_for_cross_process_session_lifecycle(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_cross_process_session_lifecycle": {
+                "status": "ready_for_review",
+                "lifecycle": {
+                    "status": "ready_for_review",
+                    "ready_for_review": True,
+                    "pause_session_id": "debugger-life-1",
+                    "target_id": "target-debugger-life",
+                    "session_diagnostics": {"attached_session_retained": True},
+                    "target_diagnostics": {
+                        "target_still_alive_proven": False,
+                        "target_still_alive_proof_requires_cdp_probe": True,
+                    },
+                    "debugger_diagnostics": {
+                        "live_callframe_recovered": True,
+                        "live_callframe_id_present": True,
+                    },
+                    "continuation_diagnostics": {
+                        "automatic_multi_step_loop_supported": False,
+                        "automatic_wrapper_continuation_supported": False,
+                    },
+                },
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("cross_process_session_lifecycle_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_paused_session_lifecycle_before_next_continuation_step")
+        lifecycle = result["summary"]["cross_process_session_lifecycle"]
+        self.assertTrue(lifecycle["ready_for_review"])
+        self.assertTrue(lifecycle["attached_session_retained"])
+        self.assertFalse(lifecycle["target_still_alive_proven"])
+        self.assertFalse(lifecycle["automatic_multi_step_loop_supported"])
+        self.assertFalse(lifecycle["automatic_wrapper_continuation_supported"])
+        self.assertTrue(result["review_required_items"][0]["cross_process_session_lifecycle_diagnostics"]["ready_for_review"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_blocks_cross_process_session_lifecycle(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_cross_process_session_lifecycle": {
+                "status": "blocked",
+                "lifecycle": {
+                    "status": "blocked",
+                    "blockers": ["target_id_required"],
+                    "ready_for_review": False,
+                },
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_cross_process_session_lifecycle_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "resolve_paused_session_lifecycle_blockers")
+        self.assertFalse(result["summary"]["cross_process_session_lifecycle"]["ready_for_review"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+
+    def test_review_debugger_artifacts_warns_after_cross_process_attach_probe_without_live_callframe(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_cross_process_attach_probe": {
+                "probe": {
+                    "status": "attached",
+                    "pause_session_id": "attach-probe-review-1",
+                    "requested_action": "evaluate",
+                    "target_id": "target-review-1",
+                    "attach_attempted": True,
+                    "target_attached": True,
+                    "target_detached": True,
+                    "debugger_domain_enabled": False,
+                    "live_callframe_recovered": False,
+                    "live_action_executed": False,
+                    "browser_resumed": False,
+                    "debugger_stepped": False,
+                    "callframe_evaluated": False,
+                    "cdp_methods": ["Target.attachToTarget", "Target.detachFromTarget"],
+                    "blockers": [],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("attach_probe_ready_but_live_callframe_recovery_not_observed", result["warnings"])
+        self.assertEqual(result["next_action"], "review_attach_probe_result_before_live_callframe_recovery")
+        probe = result["summary"]["cross_process_attach_probe"]
+        self.assertEqual(probe["status"], "attached")
+        self.assertTrue(probe["attach_attempted"])
+        self.assertTrue(probe["target_attached"])
+        self.assertTrue(probe["target_detached"])
+        self.assertFalse(probe["debugger_domain_enabled"])
+        self.assertFalse(probe["live_callframe_recovered"])
+        self.assertFalse(probe["live_action_executed"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+        self.assertFalse(result["side_effect_policy"]["calls_mcp"])
+        self.assertFalse(result["side_effect_policy"]["mobile_runtime_used"])
+
+
+    def test_review_debugger_artifacts_warns_when_live_callframe_recovered_but_executor_missing(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_live_callframe_recovery": {
+                "recovery": {
+                    "status": "recovered",
+                    "pause_session_id": "recover-review-1",
+                    "requested_action": "evaluate",
+                    "target_id": "target-review-1",
+                    "attach_probe_status": "attached",
+                    "target_attached": True,
+                    "fresh_paused_event_after_attach": True,
+                    "callframe_count": 1,
+                    "selected_callframe_has_id": True,
+                    "live_callframe_recovered": True,
+                    "one_action_executor_ready_for_review": True,
+                    "debugger_domain_enabled": False,
+                    "live_action_executed": False,
+                    "browser_resumed": False,
+                    "debugger_stepped": False,
+                    "callframe_evaluated": False,
+                    "blockers": [],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("live_callframe_recovered_one_action_not_observed", result["warnings"])
+        self.assertEqual(result["next_action"], "plan_cross_process_one_action_executor")
+        recovery = result["summary"]["live_callframe_recovery"]
+        self.assertEqual(recovery["status"], "recovered")
+        self.assertTrue(recovery["live_callframe_recovered"])
+        self.assertTrue(recovery["one_action_executor_ready_for_review"])
+        self.assertFalse(recovery["callframe_evaluated"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_blocks_live_callframe_recovery_failure(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_live_callframe_recovery": {
+                "recovery": {
+                    "status": "blocked",
+                    "target_id": "target-review-1",
+                    "target_attached": True,
+                    "fresh_paused_event_after_attach": False,
+                    "callframe_count": 1,
+                    "selected_callframe_has_id": True,
+                    "live_callframe_recovered": False,
+                    "blockers": ["fresh_paused_event_after_attach_required"],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_live_callframe_recovery_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "capture_new_paused_event_after_attach")
+        self.assertEqual(result["review_required_items"][0]["live_callframe_recovery_diagnostics"]["status"], "blocked")
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+
+    def test_review_debugger_artifacts_warns_when_one_action_needs_next_paused_event_capture_plan(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_cross_process_one_action_execution": {
+                "execution": {
+                    "status": "executed",
+                    "requested_action": "step_over",
+                    "method": "Debugger.stepOver",
+                    "live_action_executed": True,
+                    "debugger_stepped": True,
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("cross_process_one_action_next_paused_event_capture_plan_not_observed", result["warnings"])
+        self.assertEqual(result["next_action"], "plan_next_paused_event_capture")
+        self.assertEqual(result["summary"]["next_paused_event_capture_plan"]["status"], "unknown")
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_warns_for_next_paused_event_capture_plan(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_next_paused_event_capture_plan": {
+                "plan": {
+                    "status": "ready_for_review",
+                    "method": "Debugger.stepOver",
+                    "requires_next_paused_event_capture": True,
+                    "plan_ready_for_review": True,
+                    "automatic_capture_supported": False,
+                    "capture_window": "after_step_until_next_debugger_paused",
+                    "blockers": [],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("next_paused_event_capture_plan_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_next_paused_event_capture_plan")
+        plan = result["summary"]["next_paused_event_capture_plan"]
+        self.assertTrue(plan["plan_ready_for_review"])
+        self.assertTrue(plan["requires_next_paused_event_capture"])
+        self.assertFalse(plan["automatic_capture_supported"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_warns_for_pre_action_orchestration_review(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_pre_action_subscribe_and_action": {
+                "orchestration": {
+                    "status": "ready_for_review",
+                    "method": "Debugger.stepOver",
+                    "pre_action_event_subscribed": False,
+                    "action_sent_after_subscription": False,
+                    "paused_event_captured": False,
+                    "captured_event_count": 0,
+                    "callframe_count": 0,
+                    "live_callframe_recovery_ready": False,
+                    "blockers": [],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("pre_action_subscribe_and_action_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "approve_pre_action_subscribe_and_action")
+        orchestration = result["summary"]["pre_action_subscribe_and_action"]
+        self.assertEqual(orchestration["status"], "ready_for_review")
+        self.assertFalse(orchestration["paused_event_captured"])
+
+    def test_review_debugger_artifacts_warns_for_captured_pre_action_orchestration(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_pre_action_subscribe_and_action": {
+                "orchestration": {
+                    "status": "captured",
+                    "method": "Debugger.stepOver",
+                    "pre_action_event_subscribed": True,
+                    "action_sent_after_subscription": True,
+                    "live_action_executed": True,
+                    "paused_event_captured": True,
+                    "captured_event_count": 1,
+                    "callframe_count": 1,
+                    "live_callframe_recovery_ready": True,
+                    "blockers": [],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("pre_action_subscribe_and_action_captured_checkpoint_not_observed", result["warnings"])
+        self.assertEqual(result["next_action"], "checkpoint_cross_process_continuation")
+        orchestration = result["summary"]["pre_action_subscribe_and_action"]
+        self.assertTrue(orchestration["pre_action_event_subscribed"])
+        self.assertTrue(orchestration["action_sent_after_subscription"])
+        self.assertTrue(orchestration["paused_event_captured"])
+        self.assertEqual(orchestration["callframe_count"], 1)
+
+    def test_review_debugger_artifacts_warns_for_multi_step_continuation_workflow_review(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_multi_step_continuation_workflow": {
+                "workflow": {
+                    "status": "ready_for_review",
+                    "workflow_id": "workflow-review-1",
+                    "planned_step_count": 2,
+                    "max_planned_steps": 2,
+                    "execute_at_most_one_action_per_review": True,
+                    "manual_checkpoint_required_after_each_step": True,
+                    "automatic_loop": False,
+                    "blockers": [],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("multi_step_continuation_workflow_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "approve_multi_step_continuation_workflow")
+        workflow = result["summary"]["multi_step_continuation_workflow"]
+        self.assertEqual(workflow["status"], "ready_for_review")
+        self.assertEqual(workflow["planned_step_count"], 2)
+        self.assertTrue(workflow["execute_at_most_one_action_per_review"])
+        self.assertFalse(workflow["automatic_loop"])
+        self.assertTrue(result["review_required_items"][0]["multi_step_continuation_workflow_diagnostics"]["manual_checkpoint_required_after_each_step"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_warns_for_multi_step_continuation_execution_review(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_multi_step_continuation_execution": {
+                "execution": {
+                    "status": "ready_for_review",
+                    "workflow_id": "workflow-exec-review-1",
+                    "selected_step_index": 1,
+                    "selected_method": "Debugger.stepOver",
+                    "multi_step_iteration_executed": False,
+                    "automatic_loop": False,
+                    "blockers": [],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("multi_step_continuation_execution_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "approve_multi_step_continuation_iteration")
+        execution = result["summary"]["multi_step_continuation_execution"]
+        self.assertEqual(execution["status"], "ready_for_review")
+        self.assertEqual(execution["selected_method"], "Debugger.stepOver")
+        self.assertFalse(execution["automatic_loop"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_warns_for_multi_step_continuation_execution_checkpoint(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_multi_step_continuation_execution": {
+                "execution": {
+                    "status": "executed",
+                    "workflow_id": "workflow-exec-review-2",
+                    "selected_step_index": 1,
+                    "selected_method": "Debugger.stepOver",
+                    "paused_event_captured": True,
+                    "manual_checkpoint_required_after_step": True,
+                    "multi_step_iteration_executed": True,
+                    "automatic_loop": False,
+                    "blockers": [],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("multi_step_continuation_execution_checkpoint_not_observed", result["warnings"])
+        self.assertEqual(result["next_action"], "checkpoint_cross_process_continuation")
+        self.assertTrue(result["review_required_items"][0]["multi_step_continuation_execution_diagnostics"]["manual_checkpoint_required_after_step"])
+
+    def test_review_debugger_artifacts_blocks_multi_step_continuation_workflow(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_multi_step_continuation_workflow": {
+                "workflow": {
+                    "status": "blocked",
+                    "planned_step_count": 0,
+                    "blockers": ["planned_actions_required"],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_multi_step_continuation_workflow_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_multi_step_continuation_workflow_blockers")
+
+    def test_review_debugger_artifacts_warns_for_multi_step_loop_plan_review(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_multi_step_loop_plan": {
+                "loop_plan": {
+                    "status": "ready_for_review",
+                    "loop_id": "loop-review-1",
+                    "workflow_id": "workflow-review-1",
+                    "completed_iteration_count": 1,
+                    "remaining_iteration_count": 1,
+                    "planned_iteration_count": 1,
+                    "ready_for_review": True,
+                    "readiness": {
+                        "next_loop_iteration_reviewable": True,
+                        "automatic_multi_step_loop_supported": False,
+                        "automatic_queue_advance_supported": False,
+                    },
+                    "blockers": [],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("multi_step_loop_plan_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_next_paused_session_loop_iteration")
+        loop_plan = result["summary"]["multi_step_loop_plan"]
+        self.assertTrue(loop_plan["ready_for_review"])
+        self.assertTrue(loop_plan["next_iteration_reviewable"])
+        self.assertFalse(loop_plan["automatic_multi_step_loop_supported"])
+        self.assertTrue(result["review_required_items"][0]["multi_step_loop_plan_diagnostics"]["next_iteration_reviewable"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_blocks_multi_step_loop_plan(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_multi_step_loop_plan": {
+                "loop_plan": {
+                    "status": "blocked",
+                    "blockers": ["followup_checkpoint_required"],
+                    "ready_for_review": False,
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_multi_step_loop_plan_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_multi_step_loop_plan_blockers")
+        self.assertFalse(result["summary"]["multi_step_loop_plan"]["ready_for_review"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_warns_for_multi_step_loop_execution_checkpoint(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_multi_step_loop_execution": {
+                "execution": {
+                    "status": "executed",
+                    "loop_id": "loop-exec-review-1",
+                    "workflow_id": "workflow-exec-review-1",
+                    "selected_step_index": 2,
+                    "selected_method": "Debugger.stepOver",
+                    "executor_artifact": "workspace/paused-session-multi-step-continuation-execution.json",
+                    "paused_event_captured": True,
+                    "manual_checkpoint_required_after_iteration": True,
+                    "multi_step_loop_iteration_executed": True,
+                    "loop_advanced": False,
+                    "queue_advanced": False,
+                    "automatic_multi_step_loop": False,
+                    "automatic_wrapper_continuation": False,
+                    "blockers": [],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("multi_step_loop_execution_checkpoint_not_observed", result["warnings"])
+        self.assertEqual(result["next_action"], "checkpoint_loop_iteration_captured_pause")
+        loop_execution = result["summary"]["multi_step_loop_execution"]
+        self.assertTrue(loop_execution["multi_step_loop_iteration_executed"])
+        self.assertFalse(loop_execution["loop_advanced"])
+        self.assertFalse(loop_execution["queue_advanced"])
+        self.assertFalse(loop_execution["automatic_multi_step_loop"])
+        self.assertTrue(result["review_required_items"][0]["multi_step_loop_execution_diagnostics"]["multi_step_loop_iteration_executed"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_warns_for_automatic_loop_readiness_review(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_readiness": {
+                "status": "ready_for_review",
+                "ready_for_review": True,
+                "automation_executor_implemented": False,
+                "automatic_multi_step_loop_supported": False,
+                "candidate_iteration_count": 2,
+                "max_automatic_iterations": 2,
+                "next_action": "review_future_bounded_automatic_loop_executor_contract",
+                "blockers": [],
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("automatic_loop_readiness_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_future_bounded_automatic_loop_executor_contract")
+        readiness = result["summary"]["automatic_loop_readiness"]
+        self.assertTrue(readiness["ready_for_review"])
+        self.assertFalse(readiness["automation_executor_implemented"])
+        self.assertFalse(readiness["automatic_multi_step_loop_supported"])
+        self.assertEqual(readiness["candidate_iteration_count"], 2)
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_blocks_automatic_loop_readiness(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_readiness": {
+                "status": "blocked",
+                "ready_for_review": False,
+                "blockers": ["multi_step_loop_plan_required"],
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_automatic_loop_readiness_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_paused_session_automatic_loop_readiness_blockers")
+        self.assertFalse(result["summary"]["automatic_loop_readiness"]["ready_for_review"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_warns_for_automatic_loop_execution_plan_review(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_execution_plan": {
+                "status": "ready_for_review",
+                "ready_for_review": True,
+                "execution_plan_ready_for_review": True,
+                "planned_iteration_count": 2,
+                "max_planned_iterations": 2,
+                "future_executor_contract": {"implemented": False},
+                "next_action": "review_future_bounded_automatic_loop_executor_plan",
+                "blockers": [],
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("automatic_loop_execution_plan_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_future_bounded_automatic_loop_executor_plan")
+        execution_plan = result["summary"]["automatic_loop_execution_plan"]
+        self.assertTrue(execution_plan["ready_for_review"])
+        self.assertTrue(execution_plan["execution_plan_ready_for_review"])
+        self.assertEqual(execution_plan["planned_iteration_count"], 2)
+        self.assertFalse(execution_plan["future_executor_implemented"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_blocks_automatic_loop_execution_plan(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_execution_plan": {
+                "status": "blocked",
+                "ready_for_review": False,
+                "blockers": ["automatic_loop_readiness_required"],
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_automatic_loop_execution_plan_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_paused_session_automatic_loop_execution_plan_blockers")
+        self.assertFalse(result["summary"]["automatic_loop_execution_plan"]["ready_for_review"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_warns_for_automatic_loop_executor_preflight_review(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_executor_preflight": {
+                "status": "ready_for_review",
+                "ready_for_review": True,
+                "executor_preflight_ready_for_review": True,
+                "preflight_iteration_count": 2,
+                "max_preflight_iterations": 2,
+                "executor_input_gates": {"ready_to_execute_now": False},
+                "future_executor_contract": {"implemented": False},
+                "next_action": "review_future_bounded_automatic_loop_executor_preflight",
+                "blockers": [],
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("automatic_loop_executor_preflight_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_future_bounded_automatic_loop_executor_preflight")
+        preflight = result["summary"]["automatic_loop_executor_preflight"]
+        self.assertTrue(preflight["ready_for_review"])
+        self.assertTrue(preflight["executor_preflight_ready_for_review"])
+        self.assertFalse(preflight["ready_to_execute_now"])
+        self.assertEqual(preflight["preflight_iteration_count"], 2)
+        self.assertFalse(preflight["future_executor_implemented"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_blocks_automatic_loop_executor_preflight(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_executor_preflight": {
+                "status": "blocked",
+                "ready_for_review": False,
+                "blockers": ["automatic_loop_execution_plan_required"],
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_automatic_loop_executor_preflight_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_paused_session_automatic_loop_executor_preflight_blockers")
+        self.assertFalse(result["summary"]["automatic_loop_executor_preflight"]["ready_for_review"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_warns_for_automatic_loop_executor_approval_plan_review(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_executor_approval_plan": {
+                "status": "ready_for_review",
+                "ready_for_review": True,
+                "approval_plan_ready_for_review": True,
+                "approved_iteration_count": 2,
+                "max_approved_iterations": 2,
+                "executor_input_gates": {
+                    "ready_to_execute_now": False,
+                    "approval_recorded": False,
+                },
+                "transaction_plan": {
+                    "transaction_started": False,
+                    "journal_written_now": False,
+                },
+                "future_executor_contract": {"implemented": False},
+                "next_action": "review_future_bounded_automatic_loop_executor_approval_transaction",
+                "blockers": [],
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("automatic_loop_executor_approval_plan_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_future_bounded_automatic_loop_executor_approval_transaction")
+        approval = result["summary"]["automatic_loop_executor_approval_plan"]
+        self.assertTrue(approval["ready_for_review"])
+        self.assertTrue(approval["approval_plan_ready_for_review"])
+        self.assertFalse(approval["ready_to_execute_now"])
+        self.assertFalse(approval["approval_recorded"])
+        self.assertFalse(approval["transaction_started"])
+        self.assertFalse(approval["journal_written"])
+        self.assertEqual(approval["approved_iteration_count"], 2)
+        self.assertFalse(approval["future_executor_implemented"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_blocks_automatic_loop_executor_approval_plan(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_executor_approval_plan": {
+                "status": "blocked",
+                "ready_for_review": False,
+                "blockers": ["automatic_loop_executor_preflight_required"],
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_automatic_loop_executor_approval_plan_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_paused_session_automatic_loop_executor_approval_plan_blockers")
+        self.assertFalse(result["summary"]["automatic_loop_executor_approval_plan"]["ready_for_review"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_warns_for_automatic_loop_execution_result_checkpoint(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_execution_result": {
+                "execution": {
+                    "status": "executed",
+                    "transaction_id": "automatic-loop-executor-transaction:preflight-1",
+                    "journal_id": "automatic-loop-journal-1",
+                    "executed_iteration_count": 1,
+                    "checkpoint_required": True,
+                    "automatic_loop_executed": True,
+                    "automatic_loop_one_iteration_executed": True,
+                    "loop_advanced": False,
+                    "queue_advanced": False,
+                    "long_lived_session_managed": False,
+                    "blockers": [],
+                    "side_effect_policy": {
+                        "automatic_loop_executor": True,
+                        "automatic_loop_one_iteration_executed": True,
+                        "automatic_multi_step_loop": False,
+                        "bounded_one_iteration_only": True,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("automatic_loop_execution_checkpoint_required", result["warnings"])
+        self.assertEqual(result["next_action"], "checkpoint_paused_session_automatic_loop_execution")
+        execution = result["summary"]["automatic_loop_execution_result"]
+        self.assertEqual(execution["executed_iteration_count"], 1)
+        self.assertTrue(execution["automatic_loop_executed"])
+        self.assertTrue(execution["automatic_loop_one_iteration_executed"])
+        self.assertTrue(execution["checkpoint_required"])
+        self.assertFalse(execution["loop_advanced"])
+        self.assertFalse(execution["queue_advanced"])
+        self.assertFalse(execution["calls_mcp"])
+        self.assertFalse(execution["mobile_runtime_used"])
+        self.assertTrue(result["review_required_items"][0]["automatic_loop_execution_result_diagnostics"]["automatic_loop_one_iteration_executed"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_blocks_automatic_loop_execution_result(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_execution_result": {
+                "execution": {
+                    "status": "blocked",
+                    "executed_iteration_count": 0,
+                    "checkpoint_required": False,
+                    "automatic_loop_executed": False,
+                    "automatic_loop_one_iteration_executed": False,
+                    "loop_advanced": False,
+                    "queue_advanced": False,
+                    "blockers": ["bounded_executor_gate_required"],
+                    "side_effect_policy": {
+                        "automatic_loop_executor": True,
+                        "automatic_loop_one_iteration_executed": False,
+                        "automatic_multi_step_loop": False,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_automatic_loop_execution_result_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_paused_session_automatic_loop_execution_result_blockers")
+        execution = result["summary"]["automatic_loop_execution_result"]
+        self.assertEqual(execution["blockers"], ["bounded_executor_gate_required"])
+        self.assertFalse(execution["automatic_loop_executed"])
+        self.assertFalse(execution["automatic_loop_one_iteration_executed"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_blocks_automatic_loop_followup_checkpoint(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_followup_checkpoint": {
+                "checkpoint": {
+                    "status": "blocked",
+                    "ready_for_review": False,
+                    "transaction_id": "automatic-loop-executor-transaction:followup-1",
+                    "checkpoint_review": {"checkpoint_ready": False},
+                    "next_loop_review": {"next_loop_plan_ready": False, "next_iteration_reviewable": False},
+                    "blockers": ["automatic_loop_followup_checkpoint_required"],
+                    "side_effect_policy": {
+                        "checkpoint_written": False,
+                        "loop_advanced": False,
+                        "queue_advanced": False,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_automatic_loop_followup_checkpoint_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_paused_session_automatic_loop_followup_checkpoint_blockers")
+        followup = result["summary"]["automatic_loop_followup_checkpoint"]
+        self.assertEqual(followup["status"], "blocked")
+        self.assertFalse(followup["ready_for_review"])
+        self.assertFalse(followup["checkpoint_ready"])
+        self.assertFalse(followup["next_loop_plan_ready"])
+        self.assertFalse(followup["next_iteration_reviewable"])
+        self.assertFalse(followup["checkpoint_written"])
+        self.assertFalse(followup["loop_advanced"])
+        self.assertFalse(followup["queue_advanced"])
+        self.assertFalse(followup["calls_mcp"])
+        self.assertFalse(followup["mobile_runtime_used"])
+        diagnostics = result["review_required_items"][0]["automatic_loop_followup_checkpoint_diagnostics"]
+        self.assertEqual(diagnostics["blockers"], ["automatic_loop_followup_checkpoint_required"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_warns_for_automatic_loop_followup_checkpoint_next_loop_review(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_followup_checkpoint": {
+                "checkpoint": {
+                    "status": "ready_for_review",
+                    "ready_for_review": True,
+                    "transaction_id": "automatic-loop-executor-transaction:followup-2",
+                    "checkpoint_review": {"checkpoint_ready": True},
+                    "next_loop_review": {"next_loop_plan_ready": True, "next_iteration_reviewable": True},
+                    "blockers": [],
+                    "side_effect_policy": {
+                        "checkpoint_written": False,
+                        "loop_advanced": False,
+                        "queue_advanced": False,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("automatic_loop_followup_checkpoint_ready_for_next_loop_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_next_paused_session_automatic_loop_iteration")
+        followup = result["summary"]["automatic_loop_followup_checkpoint"]
+        self.assertEqual(followup["status"], "ready_for_review")
+        self.assertTrue(followup["ready_for_review"])
+        self.assertTrue(followup["checkpoint_ready"])
+        self.assertTrue(followup["next_loop_plan_ready"])
+        self.assertTrue(followup["next_iteration_reviewable"])
+        self.assertFalse(followup["checkpoint_written"])
+        self.assertFalse(followup["loop_advanced"])
+        self.assertFalse(followup["queue_advanced"])
+        self.assertFalse(followup["calls_mcp"])
+        self.assertFalse(followup["mobile_runtime_used"])
+        diagnostics = result["review_required_items"][0]["automatic_loop_followup_checkpoint_diagnostics"]
+        self.assertTrue(diagnostics["next_loop_plan_ready"])
+        self.assertTrue(diagnostics["next_iteration_reviewable"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_blocks_automatic_loop_next_iteration_plan(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_next_iteration_plan": {
+                "plan": {
+                    "status": "blocked",
+                    "ready_for_review": False,
+                    "transaction_id": "automatic-loop-next-plan:blocked",
+                    "checkpoint_review": {"followup_checkpoint_ready": True, "continuation_checkpoint_ready": True},
+                    "next_iteration": {
+                        "next_loop_plan_ready": True,
+                        "next_iteration_reviewable": True,
+                        "fresh_live_callframe_recovered": False,
+                        "would_execute_next_iteration": False,
+                    },
+                    "blockers": ["fresh_live_callframe_recovery_required"],
+                    "side_effect_policy": {
+                        "would_execute_next_iteration": False,
+                        "loop_advanced": False,
+                        "queue_advanced": False,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_automatic_loop_next_iteration_plan_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_paused_session_automatic_loop_next_iteration_plan_blockers")
+        plan = result["summary"]["automatic_loop_next_iteration_plan"]
+        self.assertEqual(plan["status"], "blocked")
+        self.assertFalse(plan["ready_for_review"])
+        self.assertTrue(plan["followup_checkpoint_ready"])
+        self.assertTrue(plan["continuation_checkpoint_ready"])
+        self.assertTrue(plan["next_loop_plan_ready"])
+        self.assertTrue(plan["next_iteration_reviewable"])
+        self.assertFalse(plan["fresh_live_callframe_recovered"])
+        self.assertFalse(plan["would_execute_next_iteration"])
+        self.assertFalse(plan["loop_advanced"])
+        self.assertFalse(plan["queue_advanced"])
+        self.assertFalse(plan["calls_mcp"])
+        self.assertFalse(plan["mobile_runtime_used"])
+        diagnostics = result["review_required_items"][0]["automatic_loop_next_iteration_plan_diagnostics"]
+        self.assertEqual(diagnostics["blockers"], ["fresh_live_callframe_recovery_required"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_warns_for_automatic_loop_next_iteration_plan_execution_review(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_followup_checkpoint": {
+                "checkpoint": {
+                    "status": "ready_for_review",
+                    "ready_for_review": True,
+                    "transaction_id": "automatic-loop-next-plan:ready",
+                    "checkpoint_review": {"checkpoint_ready": True},
+                    "next_loop_review": {"next_loop_plan_ready": True, "next_iteration_reviewable": True},
+                    "blockers": [],
+                    "side_effect_policy": {
+                        "checkpoint_written": False,
+                        "loop_advanced": False,
+                        "queue_advanced": False,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                }
+            },
+            "paused_session_automatic_loop_next_iteration_plan": {
+                "plan": {
+                    "status": "ready_for_review",
+                    "ready_for_review": True,
+                    "transaction_id": "automatic-loop-next-plan:ready",
+                    "checkpoint_review": {"followup_checkpoint_ready": True, "continuation_checkpoint_ready": True},
+                    "next_iteration": {
+                        "next_loop_plan_ready": True,
+                        "next_iteration_reviewable": True,
+                        "fresh_live_callframe_recovered": True,
+                        "would_execute_next_iteration": False,
+                    },
+                    "execution_review_gates": {"requires_explicit_execution_approval": True},
+                    "blockers": [],
+                    "side_effect_policy": {
+                        "would_execute_next_iteration": False,
+                        "loop_advanced": False,
+                        "queue_advanced": False,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                }
+            },
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertNotIn("automatic_loop_followup_checkpoint_ready_for_next_loop_review", result["warnings"])
+        self.assertIn("automatic_loop_next_iteration_plan_requires_execution_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_paused_session_automatic_loop_next_iteration_execution")
+        plan = result["summary"]["automatic_loop_next_iteration_plan"]
+        self.assertEqual(plan["status"], "ready_for_review")
+        self.assertTrue(plan["ready_for_review"])
+        self.assertTrue(plan["followup_checkpoint_ready"])
+        self.assertTrue(plan["continuation_checkpoint_ready"])
+        self.assertTrue(plan["next_loop_plan_ready"])
+        self.assertTrue(plan["next_iteration_reviewable"])
+        self.assertTrue(plan["fresh_live_callframe_recovered"])
+        self.assertFalse(plan["would_execute_next_iteration"])
+        self.assertFalse(plan["loop_advanced"])
+        self.assertFalse(plan["queue_advanced"])
+        self.assertFalse(plan["calls_mcp"])
+        self.assertFalse(plan["mobile_runtime_used"])
+        diagnostics = result["review_required_items"][0]["automatic_loop_next_iteration_plan_diagnostics"]
+        self.assertTrue(diagnostics["requires_explicit_execution_approval"])
+        self.assertFalse(diagnostics["would_execute_next_iteration"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_blocks_automatic_loop_next_iteration_execution(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_next_iteration_execution": {
+                "execution": {
+                    "status": "blocked",
+                    "transaction_id": "automatic-loop-next-exec:blocked",
+                    "automatic_loop_next_iteration_executed": False,
+                    "executed_iteration_count": 0,
+                    "checkpoint_required": False,
+                    "loop_advanced": False,
+                    "queue_advanced": False,
+                    "blockers": ["review_approval_required"],
+                    "side_effect_policy": {"calls_mcp": False, "mobile_runtime_used": False},
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_automatic_loop_next_iteration_execution_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_paused_session_automatic_loop_next_iteration_execution_blockers")
+        execution = result["summary"]["automatic_loop_next_iteration_execution"]
+        self.assertEqual(execution["status"], "blocked")
+        self.assertFalse(execution["automatic_loop_next_iteration_executed"])
+        self.assertFalse(execution["calls_mcp"])
+        self.assertFalse(execution["mobile_runtime_used"])
+        diagnostics = result["review_required_items"][0]["automatic_loop_next_iteration_execution_diagnostics"]
+        self.assertEqual(diagnostics["blockers"], ["review_approval_required"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_warns_for_automatic_loop_next_iteration_execution_checkpoint(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_next_iteration_execution": {
+                "execution": {
+                    "status": "executed",
+                    "transaction_id": "automatic-loop-next-exec:executed",
+                    "automatic_loop_next_iteration_executed": True,
+                    "executed_iteration_count": 1,
+                    "checkpoint_required": True,
+                    "loop_advanced": False,
+                    "queue_advanced": False,
+                    "blockers": [],
+                    "side_effect_policy": {"bounded_one_iteration_only": True, "calls_mcp": False, "mobile_runtime_used": False},
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("automatic_loop_next_iteration_execution_checkpoint_required", result["warnings"])
+        self.assertEqual(result["next_action"], "checkpoint_paused_session_automatic_loop_next_iteration_execution")
+        execution = result["summary"]["automatic_loop_next_iteration_execution"]
+        self.assertEqual(execution["status"], "executed")
+        self.assertTrue(execution["automatic_loop_next_iteration_executed"])
+        self.assertEqual(execution["executed_iteration_count"], 1)
+        self.assertTrue(execution["checkpoint_required"])
+        self.assertFalse(execution["loop_advanced"])
+        self.assertFalse(execution["queue_advanced"])
+        diagnostics = result["review_required_items"][0]["automatic_loop_next_iteration_execution_diagnostics"]
+        self.assertTrue(diagnostics["automatic_loop_next_iteration_executed"])
+        self.assertFalse(diagnostics["calls_mcp"])
+        self.assertFalse(diagnostics["mobile_runtime_used"])
+
+    def test_review_debugger_artifacts_blocks_automatic_loop_multi_iteration_execution_result(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_multi_iteration_execution_result": {
+                "execution": {
+                    "status": "blocked",
+                    "transaction_id": "automatic-loop-multi-exec:blocked",
+                    "requested_iteration_budget": 2,
+                    "executed_iteration_count": 0,
+                    "checkpoint_required": False,
+                    "automatic_multi_iteration_execution_mvp": True,
+                    "automatic_multi_iteration_executor_implemented": True,
+                    "automatic_multi_iteration_loop": False,
+                    "loop_advanced": False,
+                    "queue_advanced": False,
+                    "blockers": ["review_approval_required"],
+                    "side_effect_policy": {"calls_mcp": False, "mobile_runtime_used": False},
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_automatic_loop_multi_iteration_execution_result_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_paused_session_automatic_loop_multi_iteration_execution_blockers")
+        execution = result["summary"]["automatic_loop_multi_iteration_execution_result"]
+        self.assertEqual(execution["status"], "blocked")
+        self.assertEqual(execution["executed_iteration_count"], 0)
+        self.assertTrue(execution["automatic_multi_iteration_execution_mvp"])
+        self.assertTrue(execution["automatic_multi_iteration_executor_implemented"])
+        self.assertFalse(execution["automatic_multi_iteration_loop"])
+        diagnostics = result["review_required_items"][0]["automatic_loop_multi_iteration_execution_result_diagnostics"]
+        self.assertEqual(diagnostics["blockers"], ["review_approval_required"])
+        self.assertFalse(diagnostics["calls_mcp"])
+        self.assertFalse(diagnostics["mobile_runtime_used"])
+
+    def test_review_debugger_artifacts_warns_for_automatic_loop_multi_iteration_execution_checkpoint(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_multi_iteration_execution_result": {
+                "execution": {
+                    "status": "partial",
+                    "transaction_id": "automatic-loop-multi-exec:partial",
+                    "journal_id": "automatic-loop-multi-exec:journal",
+                    "requested_iteration_budget": 2,
+                    "selected_step_index": 1,
+                    "executed_iteration_count": 1,
+                    "checkpoint_required": True,
+                    "automatic_multi_iteration_execution_mvp": True,
+                    "automatic_multi_iteration_executor_implemented": True,
+                    "automatic_multi_iteration_loop": False,
+                    "loop_advanced": False,
+                    "queue_advanced": False,
+                    "blockers": [],
+                    "side_effect_policy": {"bounded_one_iteration_only": True, "calls_mcp": False, "mobile_runtime_used": False},
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("automatic_loop_multi_iteration_execution_checkpoint_required", result["warnings"])
+        self.assertEqual(result["next_action"], "checkpoint_paused_session_automatic_loop_multi_iteration_execution")
+        execution = result["summary"]["automatic_loop_multi_iteration_execution_result"]
+        self.assertEqual(execution["status"], "partial")
+        self.assertEqual(execution["requested_iteration_budget"], 2)
+        self.assertEqual(execution["executed_iteration_count"], 1)
+        self.assertTrue(execution["checkpoint_required"])
+        self.assertTrue(execution["automatic_multi_iteration_execution_mvp"])
+        self.assertTrue(execution["automatic_multi_iteration_executor_implemented"])
+        self.assertFalse(execution["automatic_multi_iteration_loop"])
+        self.assertFalse(execution["loop_advanced"])
+        self.assertFalse(execution["queue_advanced"])
+        diagnostics = result["review_required_items"][0]["automatic_loop_multi_iteration_execution_result_diagnostics"]
+        self.assertEqual(diagnostics["executed_iteration_count"], 1)
+        self.assertFalse(diagnostics["calls_mcp"])
+        self.assertFalse(diagnostics["mobile_runtime_used"])
+
+
+    def test_review_debugger_artifacts_blocks_automatic_loop_multi_iteration_followup_checkpoint(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_multi_iteration_followup_checkpoint": {
+                "checkpoint": {
+                    "status": "blocked",
+                    "ready_for_review": False,
+                    "transaction_id": "automatic-loop-multi-followup:blocked",
+                    "checkpoint_review": {"checkpoint_ready": False},
+                    "next_loop_review": {"next_loop_plan_ready": False, "next_iteration_reviewable": False},
+                    "blockers": ["automatic_loop_multi_iteration_followup_checkpoint_required"],
+                    "side_effect_policy": {
+                        "checkpoint_written": False,
+                        "automatic_multi_iteration_loop": False,
+                        "loop_advanced": False,
+                        "queue_advanced": False,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_automatic_loop_multi_iteration_followup_checkpoint_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_paused_session_automatic_loop_multi_iteration_followup_checkpoint_blockers")
+        followup = result["summary"]["automatic_loop_multi_iteration_followup_checkpoint"]
+        self.assertEqual(followup["status"], "blocked")
+        self.assertFalse(followup["checkpoint_ready"])
+        self.assertFalse(followup["automatic_multi_iteration_loop"])
+        self.assertFalse(followup["calls_mcp"])
+        self.assertFalse(followup["mobile_runtime_used"])
+        diagnostics = result["review_required_items"][0]["automatic_loop_multi_iteration_followup_checkpoint_diagnostics"]
+        self.assertEqual(diagnostics["blockers"], ["automatic_loop_multi_iteration_followup_checkpoint_required"])
+        self.assertFalse(diagnostics["checkpoint_written"])
+        self.assertFalse(diagnostics["calls_mcp"])
+        self.assertFalse(diagnostics["mobile_runtime_used"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_warns_for_automatic_loop_multi_iteration_followup_checkpoint_next_loop_review(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_multi_iteration_followup_checkpoint": {
+                "checkpoint": {
+                    "status": "ready_for_review",
+                    "ready_for_review": True,
+                    "transaction_id": "automatic-loop-multi-followup:ready",
+                    "checkpoint_review": {"checkpoint_ready": True},
+                    "next_loop_review": {"next_loop_plan_ready": True, "next_iteration_reviewable": True},
+                    "execution_summary": {
+                        "executed_iteration_count": 1,
+                        "automatic_multi_iteration_execution_mvp": True,
+                    },
+                    "blockers": [],
+                    "side_effect_policy": {
+                        "checkpoint_written": False,
+                        "automatic_multi_iteration_loop": False,
+                        "loop_advanced": False,
+                        "queue_advanced": False,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("automatic_loop_multi_iteration_followup_checkpoint_ready_for_next_loop_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_next_paused_session_automatic_loop_multi_iteration_step")
+        followup = result["summary"]["automatic_loop_multi_iteration_followup_checkpoint"]
+        self.assertEqual(followup["status"], "ready_for_review")
+        self.assertTrue(followup["checkpoint_ready"])
+        self.assertTrue(followup["next_loop_plan_ready"])
+        self.assertTrue(followup["next_iteration_reviewable"])
+        self.assertFalse(followup["checkpoint_written"])
+        self.assertFalse(followup["automatic_multi_iteration_loop"])
+        self.assertFalse(followup["loop_advanced"])
+        self.assertFalse(followup["queue_advanced"])
+        diagnostics = result["review_required_items"][0]["automatic_loop_multi_iteration_followup_checkpoint_diagnostics"]
+        self.assertTrue(diagnostics["checkpoint_ready"])
+        self.assertTrue(diagnostics["next_loop_plan_ready"])
+        self.assertTrue(diagnostics["automatic_multi_iteration_execution_mvp"])
+        self.assertFalse(diagnostics["calls_mcp"])
+        self.assertFalse(diagnostics["mobile_runtime_used"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_blocks_automatic_loop_multi_iteration_next_step_plan(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_multi_iteration_next_step_plan": {
+                "plan": {
+                    "status": "blocked",
+                    "ready_for_review": False,
+                    "transaction_id": "automatic-loop-multi-next-step:blocked",
+                    "checkpoint_review": {
+                        "multi_iteration_followup_checkpoint_ready": False,
+                        "continuation_checkpoint_ready": False,
+                    },
+                    "next_iteration": {
+                        "next_loop_plan_ready": False,
+                        "next_iteration_reviewable": False,
+                        "fresh_live_callframe_recovered": False,
+                        "would_execute_multi_iteration": False,
+                    },
+                    "blockers": ["automatic_loop_multi_iteration_followup_checkpoint_required"],
+                    "side_effect_policy": {
+                        "would_execute_multi_iteration": False,
+                        "automatic_multi_iteration_loop": False,
+                        "loop_advanced": False,
+                        "queue_advanced": False,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_automatic_loop_multi_iteration_next_step_plan_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_paused_session_automatic_loop_multi_iteration_next_step_plan_blockers")
+        plan = result["summary"]["automatic_loop_multi_iteration_next_step_plan"]
+        self.assertEqual(plan["status"], "blocked")
+        self.assertFalse(plan["ready_for_review"])
+        self.assertFalse(plan["multi_iteration_followup_checkpoint_ready"])
+        self.assertFalse(plan["continuation_checkpoint_ready"])
+        self.assertFalse(plan["next_loop_plan_ready"])
+        self.assertFalse(plan["next_iteration_reviewable"])
+        self.assertFalse(plan["would_execute_multi_iteration"])
+        self.assertFalse(plan["automatic_multi_iteration_loop"])
+        self.assertFalse(plan["calls_mcp"])
+        self.assertFalse(plan["mobile_runtime_used"])
+        diagnostics = result["review_required_items"][0]["automatic_loop_multi_iteration_next_step_plan_diagnostics"]
+        self.assertEqual(diagnostics["blockers"], ["automatic_loop_multi_iteration_followup_checkpoint_required"])
+        self.assertFalse(diagnostics["would_execute_multi_iteration"])
+        self.assertFalse(diagnostics["calls_mcp"])
+        self.assertFalse(diagnostics["mobile_runtime_used"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_warns_for_automatic_loop_multi_iteration_next_step_plan_execution_review(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_multi_iteration_next_step_plan": {
+                "plan": {
+                    "status": "ready_for_review",
+                    "ready_for_review": True,
+                    "transaction_id": "automatic-loop-multi-next-step:ready",
+                    "checkpoint_review": {
+                        "multi_iteration_followup_checkpoint_ready": True,
+                        "continuation_checkpoint_ready": True,
+                    },
+                    "next_iteration": {
+                        "next_loop_plan_ready": True,
+                        "next_iteration_reviewable": True,
+                        "fresh_live_callframe_recovered": True,
+                        "would_execute_multi_iteration": False,
+                    },
+                    "expected_executor": {
+                        "name": "execute_paused_session_automatic_loop_multi_iteration",
+                        "implemented": True,
+                        "step264_executor_mvp": True,
+                    },
+                    "blockers": [],
+                    "side_effect_policy": {
+                        "would_execute_multi_iteration": False,
+                        "automatic_multi_iteration_loop": False,
+                        "loop_advanced": False,
+                        "queue_advanced": False,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("automatic_loop_multi_iteration_next_step_plan_requires_execution_review", result["warnings"])
+        self.assertNotIn("automatic_loop_multi_iteration_followup_checkpoint_ready_for_next_loop_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_paused_session_automatic_loop_multi_iteration_execution")
+        plan = result["summary"]["automatic_loop_multi_iteration_next_step_plan"]
+        self.assertEqual(plan["status"], "ready_for_review")
+        self.assertTrue(plan["ready_for_review"])
+        self.assertTrue(plan["multi_iteration_followup_checkpoint_ready"])
+        self.assertTrue(plan["continuation_checkpoint_ready"])
+        self.assertTrue(plan["next_loop_plan_ready"])
+        self.assertTrue(plan["next_iteration_reviewable"])
+        self.assertTrue(plan["fresh_live_callframe_recovered"])
+        self.assertEqual(plan["expected_executor"], "execute_paused_session_automatic_loop_multi_iteration")
+        self.assertTrue(plan["step264_executor_mvp"])
+        self.assertFalse(plan["would_execute_multi_iteration"])
+        self.assertFalse(plan["automatic_multi_iteration_loop"])
+        self.assertFalse(plan["loop_advanced"])
+        self.assertFalse(plan["queue_advanced"])
+        diagnostics = result["review_required_items"][0]["automatic_loop_multi_iteration_next_step_plan_diagnostics"]
+        self.assertTrue(diagnostics["multi_iteration_followup_checkpoint_ready"])
+        self.assertTrue(diagnostics["continuation_checkpoint_ready"])
+        self.assertTrue(diagnostics["next_loop_plan_ready"])
+        self.assertTrue(diagnostics["next_iteration_reviewable"])
+        self.assertTrue(diagnostics["fresh_live_callframe_recovered"])
+        self.assertEqual(diagnostics["expected_executor"], "execute_paused_session_automatic_loop_multi_iteration")
+        self.assertTrue(diagnostics["step264_executor_mvp"])
+        self.assertFalse(diagnostics["would_execute_multi_iteration"])
+        self.assertFalse(diagnostics["calls_mcp"])
+        self.assertFalse(diagnostics["mobile_runtime_used"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+
+    def test_review_debugger_artifacts_blocks_automatic_loop_multi_iteration_executor_input_preflight(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_multi_iteration_executor_input_preflight": {
+                "preflight": {
+                    "status": "blocked",
+                    "ready_for_review": False,
+                    "ready_for_execution_review": False,
+                    "ready_to_execute_now": False,
+                    "preflight_id": "automatic-loop-multi-input:blocked",
+                    "executor_input_checks": {
+                        "next_step_plan_ready": False,
+                        "bounded_executor_gate_ready": False,
+                        "transaction_journal_written": False,
+                    },
+                    "expected_executor": {"name": "execute_paused_session_automatic_loop_multi_iteration", "implemented": True, "step264_executor_mvp": True},
+                    "blockers": ["multi_iteration_next_step_plan_required"],
+                    "side_effect_policy": {
+                        "would_execute_multi_iteration": False,
+                        "automatic_multi_iteration_loop": False,
+                        "loop_advanced": False,
+                        "queue_advanced": False,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_automatic_loop_multi_iteration_executor_input_preflight_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_paused_session_automatic_loop_multi_iteration_executor_input_preflight_blockers")
+        preflight = result["summary"]["automatic_loop_multi_iteration_executor_input_preflight"]
+        self.assertEqual(preflight["status"], "blocked")
+        self.assertFalse(preflight["ready_for_review"])
+        self.assertFalse(preflight["ready_for_execution_review"])
+        self.assertFalse(preflight["ready_to_execute_now"])
+        self.assertFalse(preflight["next_step_plan_ready"])
+        self.assertFalse(preflight["bounded_executor_gate_ready"])
+        self.assertFalse(preflight["transaction_journal_written"])
+        self.assertFalse(preflight["would_execute_multi_iteration"])
+        self.assertFalse(preflight["automatic_multi_iteration_loop"])
+        diagnostics = result["review_required_items"][0]["automatic_loop_multi_iteration_executor_input_preflight_diagnostics"]
+        self.assertEqual(diagnostics["blockers"], ["multi_iteration_next_step_plan_required"])
+        self.assertFalse(diagnostics["ready_for_execution_review"])
+        self.assertFalse(diagnostics["calls_mcp"])
+        self.assertFalse(diagnostics["mobile_runtime_used"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_warns_for_automatic_loop_multi_iteration_executor_input_preflight_execution_review(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_multi_iteration_executor_input_preflight": {
+                "preflight": {
+                    "status": "ready_for_review",
+                    "ready_for_review": True,
+                    "ready_for_execution_review": True,
+                    "ready_to_execute_now": False,
+                    "preflight_id": "automatic-loop-multi-input:ready",
+                    "transaction_id": "automatic-loop-multi-input-tx",
+                    "journal_id": "automatic-loop-multi-input-journal",
+                    "next_step_plan_review": {"multi_iteration_followup_checkpoint_ready": True},
+                    "executor_input_checks": {
+                        "next_step_plan_ready": True,
+                        "bounded_executor_gate_ready": True,
+                        "transaction_journal_written": True,
+                        "loop_plan_ready": True,
+                        "workflow_ready": True,
+                        "fresh_live_callframe_recovered": True,
+                        "retained_attached_session_available": True,
+                        "selected_iteration_ready_for_executor_review": True,
+                    },
+                    "expected_executor": {"name": "execute_paused_session_automatic_loop_multi_iteration", "implemented": True, "step264_executor_mvp": True, "bounded_one_iteration_only": True},
+                    "blockers": [],
+                    "side_effect_policy": {
+                        "would_execute_multi_iteration": False,
+                        "automatic_multi_iteration_loop": False,
+                        "loop_advanced": False,
+                        "queue_advanced": False,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("automatic_loop_multi_iteration_executor_input_preflight_requires_execution_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_paused_session_automatic_loop_multi_iteration_execution")
+        preflight = result["summary"]["automatic_loop_multi_iteration_executor_input_preflight"]
+        self.assertEqual(preflight["status"], "ready_for_review")
+        self.assertTrue(preflight["ready_for_execution_review"])
+        self.assertFalse(preflight["ready_to_execute_now"])
+        self.assertTrue(preflight["next_step_plan_ready"])
+        self.assertTrue(preflight["bounded_executor_gate_ready"])
+        self.assertTrue(preflight["transaction_journal_written"])
+        self.assertTrue(preflight["loop_plan_ready"])
+        self.assertTrue(preflight["workflow_ready"])
+        self.assertTrue(preflight["fresh_live_callframe_recovered"])
+        self.assertTrue(preflight["retained_attached_session_available"])
+        self.assertEqual(preflight["expected_executor"], "execute_paused_session_automatic_loop_multi_iteration")
+        self.assertTrue(preflight["step264_executor_mvp"])
+        self.assertFalse(preflight["would_execute_multi_iteration"])
+        self.assertFalse(preflight["automatic_multi_iteration_loop"])
+        diagnostics = result["review_required_items"][0]["automatic_loop_multi_iteration_executor_input_preflight_diagnostics"]
+        self.assertTrue(diagnostics["ready_for_execution_review"])
+        self.assertTrue(diagnostics["next_step_plan_ready"])
+        self.assertTrue(diagnostics["bounded_executor_gate_ready"])
+        self.assertTrue(diagnostics["transaction_journal_written"])
+        self.assertTrue(diagnostics["fresh_live_callframe_recovered"])
+        self.assertFalse(diagnostics["would_execute_multi_iteration"])
+        self.assertFalse(diagnostics["calls_mcp"])
+        self.assertFalse(diagnostics["mobile_runtime_used"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_blocks_automatic_loop_next_iteration_followup_checkpoint(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_next_iteration_followup_checkpoint": {
+                "checkpoint": {
+                    "status": "blocked",
+                    "ready_for_review": False,
+                    "transaction_id": "automatic-loop-next-followup:blocked",
+                    "checkpoint_review": {"checkpoint_ready": False},
+                    "next_loop_review": {"next_loop_plan_ready": False, "next_iteration_reviewable": False},
+                    "blockers": ["automatic_loop_next_iteration_followup_checkpoint_required"],
+                    "side_effect_policy": {"checkpoint_written": False, "loop_advanced": False, "queue_advanced": False, "calls_mcp": False, "mobile_runtime_used": False},
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_automatic_loop_next_iteration_followup_checkpoint_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_paused_session_automatic_loop_next_iteration_followup_checkpoint_blockers")
+        followup = result["summary"]["automatic_loop_next_iteration_followup_checkpoint"]
+        self.assertEqual(followup["status"], "blocked")
+        self.assertFalse(followup["checkpoint_ready"])
+        self.assertFalse(followup["calls_mcp"])
+        self.assertFalse(followup["mobile_runtime_used"])
+        diagnostics = result["review_required_items"][0]["automatic_loop_next_iteration_followup_checkpoint_diagnostics"]
+        self.assertEqual(diagnostics["blockers"], ["automatic_loop_next_iteration_followup_checkpoint_required"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_warns_for_automatic_loop_next_iteration_followup_checkpoint_next_loop_review(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_next_iteration_followup_checkpoint": {
+                "checkpoint": {
+                    "status": "ready_for_review",
+                    "ready_for_review": True,
+                    "transaction_id": "automatic-loop-next-followup:ready",
+                    "checkpoint_review": {"checkpoint_ready": True},
+                    "next_loop_review": {"next_loop_plan_ready": True, "next_iteration_reviewable": True},
+                    "blockers": [],
+                    "side_effect_policy": {"checkpoint_written": False, "loop_advanced": False, "queue_advanced": False, "calls_mcp": False, "mobile_runtime_used": False},
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("automatic_loop_next_iteration_followup_checkpoint_ready_for_next_loop_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_following_paused_session_automatic_loop_iteration")
+        followup = result["summary"]["automatic_loop_next_iteration_followup_checkpoint"]
+        self.assertEqual(followup["status"], "ready_for_review")
+        self.assertTrue(followup["checkpoint_ready"])
+        self.assertTrue(followup["next_loop_plan_ready"])
+        self.assertFalse(followup["checkpoint_written"])
+        self.assertFalse(followup["loop_advanced"])
+        self.assertFalse(followup["queue_advanced"])
+        diagnostics = result["review_required_items"][0]["automatic_loop_next_iteration_followup_checkpoint_diagnostics"]
+        self.assertTrue(diagnostics["checkpoint_ready"])
+        self.assertFalse(diagnostics["calls_mcp"])
+        self.assertFalse(diagnostics["mobile_runtime_used"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+
+    def test_review_debugger_artifacts_warns_for_automatic_loop_following_iteration_plan_execution_review(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_following_iteration_plan": {
+                "plan": {
+                    "status": "ready_for_review",
+                    "ready_for_review": True,
+                    "transaction_id": "automatic-loop-following:ready",
+                    "checkpoint_review": {"followup_checkpoint_ready": True, "continuation_checkpoint_ready": True},
+                    "next_iteration": {"next_loop_plan_ready": True, "next_iteration_reviewable": True, "fresh_live_callframe_recovered": True},
+                    "side_effect_policy": {"would_execute_next_iteration": False, "loop_advanced": False, "queue_advanced": False, "calls_mcp": False, "mobile_runtime_used": False},
+                    "blockers": [],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("automatic_loop_following_iteration_plan_requires_execution_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_paused_session_automatic_loop_next_iteration_execution")
+        following = result["summary"]["automatic_loop_following_iteration_plan"]
+        self.assertEqual(following["status"], "ready_for_review")
+        self.assertTrue(following["followup_checkpoint_ready"])
+        self.assertTrue(following["continuation_checkpoint_ready"])
+        self.assertFalse(following["would_execute_next_iteration"])
+        diagnostics = result["review_required_items"][0]["automatic_loop_following_iteration_plan_diagnostics"]
+        self.assertTrue(diagnostics["followup_checkpoint_ready"])
+        self.assertFalse(diagnostics["calls_mcp"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_warns_for_automatic_loop_multi_iteration_policy_executor_review(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_multi_iteration_policy": {
+                "policy": {
+                    "status": "ready_for_review",
+                    "ready_for_review": True,
+                    "policy_id": "automatic-loop-policy:ready",
+                    "budget_policy": {
+                        "max_policy_iterations": 3,
+                        "automatic_multi_iteration_executor_implemented": False,
+                        "automatic_multi_iteration_execution_allowed_now": False,
+                        "requires_review_per_iteration": True,
+                        "requires_checkpoint_after_each_iteration": True,
+                        "requires_fresh_live_callframe_per_iteration": True,
+                        "stop_after_each_checkpoint": True,
+                    },
+                    "source_following_iteration_plan": {"ready_for_review": True, "fresh_live_callframe_recovered": True},
+                    "future_executor_contract": {"implemented": False},
+                    "side_effect_policy": {
+                        "automatic_multi_iteration_loop": False,
+                        "loop_advanced": False,
+                        "queue_advanced": False,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                    "blockers": [],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("automatic_loop_multi_iteration_policy_requires_executor_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_future_paused_session_automatic_loop_multi_iteration_executor_contract")
+        policy = result["summary"]["automatic_loop_multi_iteration_policy"]
+        self.assertEqual(policy["status"], "ready_for_review")
+        self.assertEqual(policy["max_policy_iterations"], 3)
+        self.assertFalse(policy["automatic_multi_iteration_executor_implemented"])
+        self.assertFalse(policy["automatic_multi_iteration_execution_allowed_now"])
+        self.assertFalse(policy["automatic_multi_iteration_loop"])
+        diagnostics = result["review_required_items"][0]["automatic_loop_multi_iteration_policy_diagnostics"]
+        self.assertEqual(diagnostics["policy_id"], "automatic-loop-policy:ready")
+        self.assertTrue(diagnostics["following_plan_ready"])
+        self.assertFalse(diagnostics["future_executor_implemented"])
+        self.assertFalse(diagnostics["calls_mcp"])
+        self.assertFalse(diagnostics["mobile_runtime_used"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_warns_for_automatic_loop_multi_iteration_executor_preflight(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_multi_iteration_executor_preflight": {
+                "preflight": {
+                    "status": "ready_for_review",
+                    "ready_for_review": True,
+                    "preflight_id": "automatic-loop-multi-iteration-preflight:automatic-loop-policy:ready",
+                    "policy_id": "automatic-loop-policy:ready",
+                    "preflight_iteration_count": 3,
+                    "policy_iteration_budget": 3,
+                    "source_policy": {"ready_for_review": True},
+                    "executor_input_gates": {
+                        "ready_to_execute_now": False,
+                        "automatic_multi_iteration_executor_implemented": False,
+                        "automatic_multi_iteration_execution_allowed_now": False,
+                        "requires_transaction_journal": True,
+                        "requires_per_iteration_review_gate": True,
+                        "requires_per_iteration_checkpoint_gate": True,
+                        "requires_fresh_live_callframe_per_iteration": True,
+                        "requires_stop_after_each_checkpoint": True,
+                    },
+                    "future_executor_contract": {"executor_name": "execute_paused_session_automatic_loop_multi_iteration", "implemented": False},
+                    "side_effect_policy": {
+                        "automatic_multi_iteration_loop": False,
+                        "loop_advanced": False,
+                        "queue_advanced": False,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                    "blockers": [],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("automatic_loop_multi_iteration_executor_preflight_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_future_paused_session_automatic_loop_multi_iteration_executor_preflight")
+        preflight = result["summary"]["automatic_loop_multi_iteration_executor_preflight"]
+        self.assertEqual(preflight["status"], "ready_for_review")
+        self.assertFalse(preflight["ready_to_execute_now"])
+        self.assertFalse(preflight["automatic_multi_iteration_executor_implemented"])
+        self.assertFalse(preflight["automatic_multi_iteration_execution_allowed_now"])
+        diagnostics = result["review_required_items"][0]["automatic_loop_multi_iteration_executor_preflight_diagnostics"]
+        self.assertEqual(diagnostics["preflight_id"], "automatic-loop-multi-iteration-preflight:automatic-loop-policy:ready")
+        self.assertFalse(diagnostics["future_executor_implemented"])
+        self.assertFalse(diagnostics["calls_mcp"])
+        self.assertFalse(diagnostics["mobile_runtime_used"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_blocks_automatic_loop_multi_iteration_executor_preflight(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_multi_iteration_executor_preflight": {
+                "preflight": {
+                    "status": "blocked",
+                    "ready_for_review": False,
+                    "preflight_id": "automatic-loop-multi-iteration-preflight:blocked",
+                    "policy_id": "automatic-loop-policy:blocked",
+                    "executor_input_gates": {"ready_to_execute_now": False},
+                    "side_effect_policy": {"automatic_multi_iteration_loop": False, "calls_mcp": False, "mobile_runtime_used": False},
+                    "blockers": ["multi_iteration_policy_not_ready"],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_automatic_loop_multi_iteration_executor_preflight_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_paused_session_automatic_loop_multi_iteration_executor_preflight_blockers")
+        diagnostics = result["review_required_items"][0]["automatic_loop_multi_iteration_executor_preflight_diagnostics"]
+        self.assertIn("multi_iteration_policy_not_ready", diagnostics["blockers"])
+
+    def test_review_debugger_artifacts_warns_for_automatic_loop_multi_iteration_execution_plan(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_multi_iteration_execution_plan": {
+                "plan": {
+                    "status": "ready_for_review",
+                    "ready_for_review": True,
+                    "execution_plan_id": "automatic-loop-multi-iteration-execution-plan:ready",
+                    "preflight_id": "automatic-loop-multi-iteration-preflight:automatic-loop-policy:ready",
+                    "policy_id": "automatic-loop-policy:ready",
+                    "planned_iteration_count": 3,
+                    "max_planned_iterations": 3,
+                    "source_preflight": {"ready_for_review": True},
+                    "execution_review_gates": {
+                        "ready_to_execute_now": False,
+                        "automatic_multi_iteration_executor_implemented": False,
+                        "automatic_multi_iteration_execution_allowed_now": False,
+                        "requires_transaction_journal": True,
+                        "requires_per_iteration_review_gate": True,
+                        "requires_per_iteration_checkpoint_gate": True,
+                        "requires_fresh_live_callframe_per_iteration": True,
+                        "requires_stop_after_each_checkpoint": True,
+                    },
+                    "future_executor_contract": {"executor_name": "execute_paused_session_automatic_loop_multi_iteration", "implemented": False},
+                    "side_effect_policy": {
+                        "automatic_multi_iteration_loop": False,
+                        "loop_advanced": False,
+                        "queue_advanced": False,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                    "blockers": [],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("automatic_loop_multi_iteration_execution_plan_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_future_paused_session_automatic_loop_multi_iteration_executor_execution")
+        plan = result["summary"]["automatic_loop_multi_iteration_execution_plan"]
+        self.assertEqual(plan["status"], "ready_for_review")
+        self.assertFalse(plan["ready_to_execute_now"])
+        self.assertFalse(plan["automatic_multi_iteration_executor_implemented"])
+        self.assertFalse(plan["automatic_multi_iteration_execution_allowed_now"])
+        diagnostics = result["review_required_items"][0]["automatic_loop_multi_iteration_execution_plan_diagnostics"]
+        self.assertEqual(diagnostics["execution_plan_id"], "automatic-loop-multi-iteration-execution-plan:ready")
+        self.assertFalse(diagnostics["future_executor_implemented"])
+        self.assertFalse(diagnostics["calls_mcp"])
+        self.assertFalse(diagnostics["mobile_runtime_used"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_blocks_automatic_loop_multi_iteration_execution_plan(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_multi_iteration_execution_plan": {
+                "plan": {
+                    "status": "blocked",
+                    "ready_for_review": False,
+                    "execution_plan_id": "automatic-loop-multi-iteration-execution-plan:blocked",
+                    "preflight_id": "automatic-loop-multi-iteration-preflight:blocked",
+                    "policy_id": "automatic-loop-policy:blocked",
+                    "execution_review_gates": {"ready_to_execute_now": False},
+                    "side_effect_policy": {"automatic_multi_iteration_loop": False, "calls_mcp": False, "mobile_runtime_used": False},
+                    "blockers": ["multi_iteration_executor_preflight_not_ready"],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_automatic_loop_multi_iteration_execution_plan_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_paused_session_automatic_loop_multi_iteration_execution_plan_blockers")
+        diagnostics = result["review_required_items"][0]["automatic_loop_multi_iteration_execution_plan_diagnostics"]
+        self.assertIn("multi_iteration_executor_preflight_not_ready", diagnostics["blockers"])
+
+    def test_review_debugger_artifacts_warns_for_automatic_loop_multi_iteration_executor_approval_plan(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_multi_iteration_executor_approval_plan": {
+                "approval_plan": {
+                    "status": "ready_for_review",
+                    "ready_for_review": True,
+                    "approval_plan_id": "automatic-loop-multi-iteration-executor-approval-plan:ready",
+                    "execution_plan_id": "automatic-loop-multi-iteration-execution-plan:ready",
+                    "preflight_id": "automatic-loop-multi-iteration-preflight:automatic-loop-policy:ready",
+                    "policy_id": "automatic-loop-policy:ready",
+                    "approved_iteration_count": 3,
+                    "max_approved_iterations": 3,
+                    "source_execution_plan": {"ready_for_review": True},
+                    "executor_input_gates": {
+                        "ready_to_execute_now": False,
+                        "automatic_multi_iteration_executor_implemented": False,
+                        "automatic_multi_iteration_execution_allowed_now": False,
+                        "approval_recorded": False,
+                        "requires_transaction_journal": True,
+                        "requires_per_iteration_review_gate": True,
+                        "requires_per_iteration_checkpoint_gate": True,
+                        "requires_fresh_live_callframe_per_iteration": True,
+                        "requires_stop_after_each_checkpoint": True,
+                    },
+                    "transaction_plan": {"transaction_started": False, "journal_written_now": False},
+                    "future_executor_contract": {"executor_name": "execute_paused_session_automatic_loop_multi_iteration", "implemented": False},
+                    "side_effect_policy": {
+                        "automatic_multi_iteration_loop": False,
+                        "loop_advanced": False,
+                        "queue_advanced": False,
+                        "calls_mcp": False,
+                        "mobile_runtime_used": False,
+                    },
+                    "blockers": [],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("automatic_loop_multi_iteration_executor_approval_plan_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_future_paused_session_automatic_loop_multi_iteration_executor_approval_transaction")
+        approval = result["summary"]["automatic_loop_multi_iteration_executor_approval_plan"]
+        self.assertEqual(approval["status"], "ready_for_review")
+        self.assertFalse(approval["ready_to_execute_now"])
+        self.assertFalse(approval["automatic_multi_iteration_executor_implemented"])
+        self.assertFalse(approval["automatic_multi_iteration_execution_allowed_now"])
+        self.assertFalse(approval["approval_recorded"])
+        self.assertFalse(approval["transaction_started"])
+        self.assertFalse(approval["journal_written"])
+        diagnostics = result["review_required_items"][0]["automatic_loop_multi_iteration_executor_approval_plan_diagnostics"]
+        self.assertEqual(diagnostics["approval_plan_id"], "automatic-loop-multi-iteration-executor-approval-plan:ready")
+        self.assertEqual(diagnostics["execution_plan_id"], "automatic-loop-multi-iteration-execution-plan:ready")
+        self.assertFalse(diagnostics["future_executor_implemented"])
+        self.assertFalse(diagnostics["calls_mcp"])
+        self.assertFalse(diagnostics["mobile_runtime_used"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_blocks_automatic_loop_multi_iteration_executor_approval_plan(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_automatic_loop_multi_iteration_executor_approval_plan": {
+                "approval_plan": {
+                    "status": "blocked",
+                    "ready_for_review": False,
+                    "approval_plan_id": "automatic-loop-multi-iteration-executor-approval-plan:blocked",
+                    "execution_plan_id": "automatic-loop-multi-iteration-execution-plan:blocked",
+                    "executor_input_gates": {"ready_to_execute_now": False},
+                    "transaction_plan": {"transaction_started": False, "journal_written_now": False},
+                    "side_effect_policy": {"automatic_multi_iteration_loop": False, "calls_mcp": False, "mobile_runtime_used": False},
+                    "blockers": ["multi_iteration_execution_plan_not_ready"],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_automatic_loop_multi_iteration_executor_approval_plan_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_paused_session_automatic_loop_multi_iteration_executor_approval_plan_blockers")
+        diagnostics = result["review_required_items"][0]["automatic_loop_multi_iteration_executor_approval_plan_diagnostics"]
+        self.assertIn("multi_iteration_execution_plan_not_ready", diagnostics["blockers"])
+
+    def test_review_debugger_artifacts_blocks_multi_step_loop_execution(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_multi_step_loop_execution": {
+                "execution": {
+                    "status": "blocked",
+                    "blockers": ["multi_step_loop_plan_not_ready"],
+                    "multi_step_loop_iteration_executed": False,
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_multi_step_loop_execution_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_multi_step_loop_execution_blockers")
+        self.assertFalse(result["summary"]["multi_step_loop_execution"]["multi_step_loop_iteration_executed"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_blocks_pre_action_orchestration_timeout(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_pre_action_subscribe_and_action": {
+                "orchestration": {
+                    "status": "timed_out",
+                    "method": "Debugger.stepOver",
+                    "pre_action_event_subscribed": True,
+                    "action_sent_after_subscription": True,
+                    "live_action_executed": True,
+                    "paused_event_captured": False,
+                    "captured_event_count": 0,
+                    "callframe_count": 0,
+                    "live_callframe_recovery_ready": False,
+                    "blockers": ["next_paused_event_capture_timed_out"],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_pre_action_subscribe_and_action_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_pre_action_subscribe_and_action_blockers")
+
+    def test_review_debugger_artifacts_warns_for_next_paused_event_capture_execution_review(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_next_paused_event_capture_execution": {
+                "execution": {
+                    "status": "ready_for_review",
+                    "method": "Debugger.stepOver",
+                    "debugger_event_subscribed": False,
+                    "paused_event_captured": False,
+                    "callframe_count": 0,
+                    "live_callframe_recovery_ready": False,
+                    "blockers": [],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("next_paused_event_capture_execution_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "approve_next_paused_event_capture_execution")
+        execution = result["summary"]["next_paused_event_capture_execution"]
+        self.assertEqual(execution["status"], "ready_for_review")
+        self.assertFalse(execution["paused_event_captured"])
+
+    def test_review_debugger_artifacts_warns_for_captured_next_paused_event(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_next_paused_event_capture_execution": {
+                "execution": {
+                    "status": "captured",
+                    "method": "Debugger.stepOver",
+                    "debugger_event_subscribed": True,
+                    "paused_event_captured": True,
+                    "captured_event_count": 1,
+                    "callframe_count": 1,
+                    "live_callframe_recovery_ready": True,
+                    "blockers": [],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("next_paused_event_captured_continuation_checkpoint_not_observed", result["warnings"])
+        self.assertEqual(result["next_action"], "checkpoint_cross_process_continuation")
+        execution = result["summary"]["next_paused_event_capture_execution"]
+        self.assertTrue(execution["paused_event_captured"])
+        self.assertTrue(execution["live_callframe_recovery_ready"])
+
+    def test_review_debugger_artifacts_warns_for_continuation_checkpoint_live_recovery(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_cross_process_continuation_checkpoint": {
+                "checkpoint": {
+                    "status": "ready_for_live_callframe_recovery",
+                    "paused_event_captured": True,
+                    "callframe_count": 1,
+                    "selected_callframe_id": "live-cf-3",
+                    "manual_checkpoint_required": True,
+                    "next_action": "recover_live_callframe_from_captured_pause",
+                    "blockers": [],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("cross_process_continuation_checkpoint_requires_live_callframe_recovery", result["warnings"])
+        self.assertEqual(result["next_action"], "recover_live_callframe_from_captured_pause")
+        checkpoint = result["summary"]["cross_process_continuation_checkpoint"]
+        self.assertTrue(checkpoint["paused_event_captured"])
+        self.assertEqual(checkpoint["callframe_count"], 1)
+        self.assertTrue(checkpoint["manual_checkpoint_required"])
+
+    def test_review_debugger_artifacts_warns_for_continuation_checkpoint_next_action(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_cross_process_continuation_checkpoint": {
+                "checkpoint": {
+                    "status": "ready_for_next_action_review",
+                    "paused_event_captured": True,
+                    "callframe_count": 1,
+                    "selected_callframe_id": "live-cf-4",
+                    "live_callframe_recovered": True,
+                    "continuation_ready_for_next_action": True,
+                    "manual_checkpoint_required": True,
+                    "next_action": "plan_next_cross_process_one_action",
+                    "blockers": [],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("cross_process_continuation_checkpoint_ready_for_next_action_review", result["warnings"])
+        self.assertEqual(result["next_action"], "plan_multi_step_continuation_workflow")
+        checkpoint = result["summary"]["cross_process_continuation_checkpoint"]
+        self.assertTrue(checkpoint["continuation_ready_for_next_action"])
+
+    def test_review_debugger_artifacts_blocks_continuation_checkpoint_blocked(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_cross_process_continuation_checkpoint": {
+                "checkpoint": {
+                    "status": "blocked",
+                    "paused_event_captured": False,
+                    "callframe_count": 0,
+                    "manual_checkpoint_required": True,
+                    "next_action": "inspect_continuation_checkpoint_blockers",
+                    "blockers": ["next_paused_event_not_captured"],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_cross_process_continuation_checkpoint_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_continuation_checkpoint_blockers")
+
+    def test_review_debugger_artifacts_warns_for_cross_process_one_action_execution_result(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_cross_process_one_action_execution": {
+                "execution": {
+                    "status": "executed",
+                    "pause_session_id": "one-action-review-1",
+                    "requested_action": "evaluate",
+                    "method": "Debugger.evaluateOnCallFrame",
+                    "target_id": "target-review-1",
+                    "attached_session_id": "attached-session-1",
+                    "live_callframe_id": "live-cf-1",
+                    "live_callframe_recovered": True,
+                    "execute_action_requested": True,
+                    "review_approved": True,
+                    "live_action_executed": True,
+                    "browser_resumed": False,
+                    "debugger_stepped": False,
+                    "callframe_evaluated": True,
+                    "cdp_methods": ["Debugger.evaluateOnCallFrame"],
+                    "blockers": [],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("cross_process_one_action_executed_review_result", result["warnings"])
+        self.assertEqual(result["next_action"], "review_cross_process_one_action_result")
+        execution = result["summary"]["cross_process_one_action_execution"]
+        self.assertEqual(execution["status"], "executed")
+        self.assertTrue(execution["live_action_executed"])
+        self.assertTrue(execution["callframe_evaluated"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_blocks_cross_process_one_action_failure(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_cross_process_one_action_execution": {
+                "execution": {
+                    "status": "failed",
+                    "requested_action": "resume",
+                    "method": "Debugger.resume",
+                    "attached_session_id": "attached-session-1",
+                    "live_callframe_id": "live-cf-1",
+                    "live_action_executed": False,
+                    "browser_resumed": False,
+                    "debugger_stepped": False,
+                    "callframe_evaluated": False,
+                    "blockers": ["cross_process_one_action_failed"],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_cross_process_one_action_execution_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_cross_process_one_action_error")
+        self.assertEqual(result["review_required_items"][0]["cross_process_one_action_diagnostics"]["status"], "failed")
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_blocks_cross_process_attach_probe_failure(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_cross_process_attach_probe": {
+                "probe": {
+                    "status": "blocked",
+                    "target_id": "",
+                    "attach_attempted": False,
+                    "target_attached": False,
+                    "target_detached": False,
+                    "blockers": ["target_id_required"],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_cross_process_attach_probe_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "resolve_cross_process_attach_probe_blockers")
+        self.assertEqual(result["review_required_items"][0]["cross_process_attach_probe_diagnostics"]["status"], "blocked")
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_review_debugger_artifacts_blocks_cross_process_execution_plan_failure(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "paused_session_cross_process_execution_plan": {
+                "plan": {
+                    "status": "blocked",
+                    "execution_plan_ready_for_review": False,
+                    "cross_process_execution_ready": False,
+                    "cross_process_executor_implemented": True,
+                    "blockers": ["target_attach_readiness_required"],
+                }
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("paused_session_cross_process_execution_plan_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "resolve_cross_process_execution_plan_blockers")
+        self.assertFalse(result["summary"]["cross_process_execution_plan"]["execution_plan_ready_for_review"])
+
     def test_review_debugger_artifacts_warns_when_no_artifacts_are_present(self) -> None:
         tool = make_review_debugger_artifacts_tool()
         result = tool("{}")
@@ -91,18 +2910,722 @@ class DebuggerSubagentTests(unittest.TestCase):
         self.assertIn("no_debugger_artifacts_provided", result["warnings"])
         self.assertEqual(result["next_action"], "collect_debugger_pause_artifacts_before_review")
 
-    def test_build_debugger_subagent_exposes_read_only_review_tool(self) -> None:
+
+    def test_review_debugger_artifacts_reads_artifact_ref(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_root = Path(tmp) / "artifacts"
+            workspace = artifact_root / "workspace"
+            workspace.mkdir(parents=True)
+            payload = {
+                "debugger_session": {"session_id": "live-1", "status": "success"},
+                "debugger_paused": {"status": "paused"},
+                "callframes": [{"functionName": "sign"}],
+            }
+            (workspace / "debugger-session.json").write_text(json.dumps(payload), encoding="utf-8")
+
+            result = make_review_debugger_artifacts_tool(artifact_root)(debugger_artifacts_ref="workspace_debugger_session")
+
+            self.assertEqual(result["status"], "pass")
+            self.assertEqual(result["summary"]["session_id"], "live-1")
+            self.assertEqual(result["artifact_input"]["artifact_ref"], "workspace_debugger_session")
+            self.assertTrue(result["side_effect_policy"]["read_only"])
+
+    def test_record_automatic_loop_executor_approval_dry_run_is_read_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_root = Path(tmp) / "artifacts"
+            tool = make_record_paused_session_automatic_loop_executor_approval_tool(artifact_root)
+            result = tool(
+                approval_plan_json=json.dumps(_ready_automatic_loop_executor_approval_plan()),
+                reviewer="alice",
+                reason="Ready to approve transaction preflight input.",
+            )
+
+            self.assertEqual(result["status"], "planned")
+            self.assertFalse(result["approval_recorded"])
+            self.assertFalse((artifact_root / "workspace" / "paused-session-automatic-loop-executor-approval-record.json").exists())
+            self.assertTrue(result["side_effect_policy"]["dry_run_is_read_only"])
+            self.assertFalse(result["side_effect_policy"]["writes_approval_record"])
+            self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+            self.assertFalse(result["side_effect_policy"]["automatic_loop_executed"])
+
+    def test_record_automatic_loop_executor_approval_apply_requires_explicit_gates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_root = Path(tmp) / "artifacts"
+            tool = make_record_paused_session_automatic_loop_executor_approval_tool(artifact_root)
+            result = tool(
+                approval_plan_json=json.dumps(_ready_automatic_loop_executor_approval_plan()),
+                mode="apply",
+                write_result=True,
+                approve_approval_record=False,
+            )
+
+            self.assertEqual(result["status"], "blocked")
+            self.assertIn("reviewer_present", result["blockers"])
+            self.assertIn("apply_requires_explicit_approval_record", result["blockers"])
+            self.assertFalse((artifact_root / "workspace" / "paused-session-automatic-loop-executor-approval-record.json").exists())
+            self.assertFalse(result["side_effect_policy"]["writes_approval_record"])
+
+    def test_record_automatic_loop_multi_iteration_executor_approval_dry_run_is_read_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_root = Path(tmp) / "artifacts"
+            tool = make_record_paused_session_automatic_loop_multi_iteration_executor_approval_tool(artifact_root)
+            result = tool(
+                approval_plan_json=json.dumps(_ready_automatic_loop_multi_iteration_executor_approval_plan()),
+                reviewer="alice",
+                reason="Ready to approve multi-iteration transaction preflight input.",
+            )
+
+            self.assertEqual(result["status"], "planned")
+            self.assertFalse(result["approval_recorded"])
+            self.assertFalse((artifact_root / "workspace" / "paused-session-automatic-loop-multi-iteration-executor-approval-record.json").exists())
+            self.assertTrue(result["side_effect_policy"]["dry_run_is_read_only"])
+            self.assertFalse(result["side_effect_policy"]["writes_approval_record"])
+            self.assertFalse(result["side_effect_policy"]["automatic_multi_iteration_loop"])
+            self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+            self.assertFalse(result["side_effect_policy"]["calls_mcp"])
+
+    def test_record_automatic_loop_multi_iteration_executor_approval_apply_requires_explicit_gates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_root = Path(tmp) / "artifacts"
+            tool = make_record_paused_session_automatic_loop_multi_iteration_executor_approval_tool(artifact_root)
+            result = tool(
+                approval_plan_json=json.dumps(_ready_automatic_loop_multi_iteration_executor_approval_plan()),
+                mode="apply",
+                write_result=True,
+                approve_approval_record=False,
+            )
+
+            self.assertEqual(result["status"], "blocked")
+            self.assertIn("reviewer_present", result["blockers"])
+            self.assertIn("apply_requires_explicit_approval_record", result["blockers"])
+            self.assertFalse((artifact_root / "workspace" / "paused-session-automatic-loop-multi-iteration-executor-approval-record.json").exists())
+            self.assertFalse(result["side_effect_policy"]["writes_approval_record"])
+            self.assertFalse(result["side_effect_policy"]["automatic_multi_iteration_loop"])
+
+    def test_record_automatic_loop_multi_iteration_executor_approval_apply_writes_record_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_root = Path(tmp) / "artifacts"
+            tool = make_record_paused_session_automatic_loop_multi_iteration_executor_approval_tool(artifact_root)
+            result = tool(
+                approval_plan_json=json.dumps(_ready_automatic_loop_multi_iteration_executor_approval_plan()),
+                reviewer="alice",
+                decision="approved",
+                reason="Reviewed bounded multi-iteration budget and transaction gates.",
+                mode="apply",
+                write_result=True,
+                approve_approval_record=True,
+                expected_execution_plan_id="automatic-loop-multi-iteration-execution-plan:ready",
+                expected_preflight_id="automatic-loop-multi-iteration-preflight:ready",
+                expected_policy_id="automatic-loop-policy:ready",
+                metadata_json=json.dumps({"ticket": "DBG-MI-1"}),
+            )
+
+            record_path = artifact_root / "workspace" / "paused-session-automatic-loop-multi-iteration-executor-approval-record.json"
+            self.assertEqual(result["status"], "written")
+            self.assertTrue(result["approval_recorded"])
+            self.assertTrue(record_path.exists())
+            record = json.loads(record_path.read_text(encoding="utf-8"))
+            self.assertEqual(record["schema_version"], "reverse-deepagent.paused-session-automatic-loop-multi-iteration-executor-approval-record.v1")
+            self.assertEqual(record["execution_plan_id"], "automatic-loop-multi-iteration-execution-plan:ready")
+            self.assertEqual(record["preflight_id"], "automatic-loop-multi-iteration-preflight:ready")
+            self.assertEqual(record["policy_id"], "automatic-loop-policy:ready")
+            self.assertEqual(len(record["approved_iterations"]), 2)
+            self.assertTrue(record["executor_input_gates"]["approval_recorded"])
+            self.assertFalse(record["executor_input_gates"]["ready_to_execute_now"])
+            self.assertFalse(record["executor_input_gates"]["transaction_started"])
+            self.assertFalse(record["executor_input_gates"]["journal_written"])
+            self.assertFalse(record["executor_input_gates"]["automatic_multi_iteration_executor_implemented"])
+            self.assertEqual(record["metadata"]["ticket"], "DBG-MI-1")
+            self.assertTrue(record["side_effect_policy"]["writes_approval_record"])
+            self.assertFalse(record["side_effect_policy"]["writes_transaction_journal"])
+            self.assertFalse(record["side_effect_policy"]["transaction_started"])
+            self.assertFalse(record["side_effect_policy"]["automatic_loop_executed"])
+            self.assertFalse(record["side_effect_policy"]["automatic_multi_iteration_loop"])
+            self.assertFalse(record["side_effect_policy"]["cdp_command_sent"])
+            self.assertFalse(record["side_effect_policy"]["calls_mcp"])
+            self.assertFalse(record["side_effect_policy"]["mobile_runtime_used"])
+
+    def test_record_automatic_loop_executor_approval_apply_writes_record_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_root = Path(tmp) / "artifacts"
+            tool = make_record_paused_session_automatic_loop_executor_approval_tool(artifact_root)
+            result = tool(
+                approval_plan_json=json.dumps(_ready_automatic_loop_executor_approval_plan()),
+                reviewer="alice",
+                decision="approved",
+                reason="Reviewed bounded iterations and transaction gates.",
+                mode="apply",
+                write_result=True,
+                approve_approval_record=True,
+                expected_preflight_id="preflight-1",
+                metadata_json=json.dumps({"ticket": "DBG-1"}),
+            )
+
+            record_path = artifact_root / "workspace" / "paused-session-automatic-loop-executor-approval-record.json"
+            self.assertEqual(result["status"], "written")
+            self.assertTrue(result["approval_recorded"])
+            self.assertTrue(record_path.exists())
+            record = json.loads(record_path.read_text(encoding="utf-8"))
+            self.assertEqual(record["schema_version"], "reverse-deepagent.paused-session-automatic-loop-executor-approval-record.v1")
+            self.assertEqual(record["preflight_id"], "preflight-1")
+            self.assertTrue(record["executor_input_gates"]["approval_recorded"])
+            self.assertFalse(record["executor_input_gates"]["transaction_started"])
+            self.assertFalse(record["executor_input_gates"]["journal_written"])
+            self.assertEqual(record["metadata"]["ticket"], "DBG-1")
+            self.assertTrue(record["side_effect_policy"]["writes_approval_record"])
+            self.assertFalse(record["side_effect_policy"]["writes_transaction_journal"])
+            self.assertFalse(record["side_effect_policy"]["automatic_loop_executed"])
+            self.assertFalse(record["side_effect_policy"]["cdp_command_sent"])
+            self.assertFalse(record["side_effect_policy"]["calls_mcp"])
+            self.assertFalse(record["side_effect_policy"]["mobile_runtime_used"])
+
+    def test_review_automatic_loop_transaction_preflight_is_read_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_root = Path(tmp) / "artifacts"
+            tool = make_review_paused_session_automatic_loop_transaction_preflight_tool(artifact_root)
+            result = tool(
+                approval_plan_json=json.dumps(_ready_automatic_loop_executor_approval_plan()),
+                approval_record_json=json.dumps(_ready_automatic_loop_executor_approval_record()),
+                expected_preflight_id="preflight-1",
+                metadata_json=json.dumps({"ticket": "DBG-2"}),
+            )
+
+            self.assertEqual(result["status"], "ready_for_review")
+            self.assertTrue(result["transaction_preflight_ready_for_review"])
+            self.assertFalse((artifact_root / "workspace" / "paused-session-automatic-loop-transaction-preflight.json").exists())
+            self.assertEqual(result["transaction_plan"]["transaction_id"], "automatic-loop-executor-transaction:preflight-1")
+            self.assertFalse(result["transaction_plan"]["transaction_started"])
+            self.assertFalse(result["transaction_plan"]["journal_written_now"])
+            self.assertFalse(result["transaction_plan"]["ready_to_write_now"])
+            self.assertTrue(result["journal_writer_input_gates"]["approval_record_verified"])
+            self.assertFalse(result["journal_writer_input_gates"]["journal_written"])
+            self.assertEqual(result["planned_journal_entries"][0]["method"], "Debugger.stepOver")
+            self.assertEqual(result["metadata"]["ticket"], "DBG-2")
+            self.assertTrue(result["side_effect_policy"]["read_only"])
+            self.assertFalse(result["side_effect_policy"]["writes_transaction_journal"])
+            self.assertFalse(result["side_effect_policy"]["transaction_started"])
+            self.assertFalse(result["side_effect_policy"]["automatic_loop_executed"])
+            self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+            self.assertFalse(result["side_effect_policy"]["calls_mcp"])
+            self.assertFalse(result["side_effect_policy"]["mobile_runtime_used"])
+
+    def test_review_automatic_loop_transaction_preflight_blocks_unapproved_or_mismatched_record(self) -> None:
+        plan = _ready_automatic_loop_executor_approval_plan()
+        record = _ready_automatic_loop_executor_approval_record()
+        record["decision"] = "rejected"
+        record["approved_for_execution"] = False
+        record["preflight_id"] = "other-preflight"
+        tool = make_review_paused_session_automatic_loop_transaction_preflight_tool()
+
+        result = tool(
+            approval_plan_json=json.dumps(plan),
+            approval_record_json=json.dumps(record),
+            expected_preflight_id="preflight-1",
+        )
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn("approval_record_approved_for_execution", result["blockers"])
+        self.assertIn("approval_record_matches_preflight_id", result["blockers"])
+        self.assertFalse(result["journal_writer_input_gates"]["approval_record_verified"])
+        self.assertFalse(result["side_effect_policy"]["writes_transaction_journal"])
+
+    def test_review_automatic_loop_transaction_preflight_reads_artifact_refs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_root = Path(tmp) / "artifacts"
+            workspace = artifact_root / "workspace"
+            workspace.mkdir(parents=True)
+            (workspace / "paused-session-automatic-loop-executor-approval-plan.json").write_text(
+                json.dumps(_ready_automatic_loop_executor_approval_plan()),
+                encoding="utf-8",
+            )
+            (workspace / "paused-session-automatic-loop-executor-approval-record.json").write_text(
+                json.dumps(_ready_automatic_loop_executor_approval_record()),
+                encoding="utf-8",
+            )
+
+            result = make_review_paused_session_automatic_loop_transaction_preflight_tool(artifact_root)(
+                approval_plan_ref="workspace_paused_session_automatic_loop_executor_approval_plan",
+                approval_record_ref="workspace_paused_session_automatic_loop_executor_approval_record",
+            )
+
+            self.assertEqual(result["status"], "ready_for_review")
+            self.assertEqual(result["metadata"]["approval_plan_read"]["artifact_ref"], "workspace_paused_session_automatic_loop_executor_approval_plan")
+            self.assertEqual(result["metadata"]["approval_record_read"]["artifact_ref"], "workspace_paused_session_automatic_loop_executor_approval_record")
+
+    def test_review_automatic_loop_multi_iteration_transaction_preflight_is_read_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_root = Path(tmp) / "artifacts"
+            tool = make_review_paused_session_automatic_loop_multi_iteration_transaction_preflight_tool(artifact_root)
+            result = tool(
+                approval_plan_json=json.dumps(_ready_automatic_loop_multi_iteration_executor_approval_plan()),
+                approval_record_json=json.dumps(_ready_automatic_loop_multi_iteration_executor_approval_record()),
+                expected_execution_plan_id="automatic-loop-multi-iteration-execution-plan:ready",
+                expected_preflight_id="automatic-loop-multi-iteration-preflight:ready",
+                expected_policy_id="automatic-loop-policy:ready",
+                metadata_json=json.dumps({"ticket": "DBG-MI-2"}),
+            )
+
+            self.assertEqual(result["status"], "ready_for_review")
+            self.assertTrue(result["transaction_preflight_ready_for_review"])
+            self.assertFalse((artifact_root / "workspace" / "paused-session-automatic-loop-multi-iteration-transaction-preflight.json").exists())
+            self.assertEqual(result["schema_version"], "reverse-deepagent.paused-session-automatic-loop-multi-iteration-transaction-preflight.v1")
+            self.assertEqual(result["transaction_plan"]["transaction_id"], "automatic-loop-multi-iteration-transaction:ready")
+            self.assertFalse(result["transaction_plan"]["transaction_started"])
+            self.assertFalse(result["transaction_plan"]["journal_written_now"])
+            self.assertFalse(result["transaction_plan"]["ready_to_write_now"])
+            self.assertTrue(result["journal_writer_input_gates"]["approval_record_verified"])
+            self.assertFalse(result["journal_writer_input_gates"]["journal_written"])
+            self.assertFalse(result["journal_writer_input_gates"]["automatic_multi_iteration_loop"])
+            self.assertEqual(len(result["planned_journal_entries"]), 2)
+            self.assertEqual(result["planned_journal_entries"][1]["method"], "Debugger.stepInto")
+            self.assertEqual(result["metadata"]["ticket"], "DBG-MI-2")
+            self.assertTrue(result["side_effect_policy"]["read_only"])
+            self.assertFalse(result["side_effect_policy"]["writes_transaction_journal"])
+            self.assertFalse(result["side_effect_policy"]["transaction_started"])
+            self.assertFalse(result["side_effect_policy"]["automatic_loop_executed"])
+            self.assertFalse(result["side_effect_policy"]["automatic_multi_iteration_loop"])
+            self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+            self.assertFalse(result["side_effect_policy"]["calls_mcp"])
+            self.assertFalse(result["side_effect_policy"]["mobile_runtime_used"])
+
+    def test_review_automatic_loop_multi_iteration_transaction_preflight_blocks_unapproved_or_mismatched_record(self) -> None:
+        plan = _ready_automatic_loop_multi_iteration_executor_approval_plan()
+        record = _ready_automatic_loop_multi_iteration_executor_approval_record()
+        record["decision"] = "rejected"
+        record["approved_for_execution"] = False
+        record["execution_plan_id"] = "other-execution-plan"
+        record["policy_id"] = "other-policy"
+        tool = make_review_paused_session_automatic_loop_multi_iteration_transaction_preflight_tool()
+
+        result = tool(
+            approval_plan_json=json.dumps(plan),
+            approval_record_json=json.dumps(record),
+            expected_execution_plan_id="automatic-loop-multi-iteration-execution-plan:ready",
+            expected_policy_id="automatic-loop-policy:ready",
+        )
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn("approval_record_approved_for_execution", result["blockers"])
+        self.assertIn("approval_record_matches_execution_plan_id", result["blockers"])
+        self.assertIn("approval_record_matches_policy_id", result["blockers"])
+        self.assertFalse(result["journal_writer_input_gates"]["approval_record_verified"])
+        self.assertFalse(result["side_effect_policy"]["writes_transaction_journal"])
+        self.assertFalse(result["side_effect_policy"]["automatic_multi_iteration_loop"])
+
+    def test_review_automatic_loop_multi_iteration_transaction_preflight_reads_artifact_refs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_root = Path(tmp) / "artifacts"
+            workspace = artifact_root / "workspace"
+            workspace.mkdir(parents=True)
+            (workspace / "paused-session-automatic-loop-multi-iteration-executor-approval-plan.json").write_text(
+                json.dumps(_ready_automatic_loop_multi_iteration_executor_approval_plan()),
+                encoding="utf-8",
+            )
+            (workspace / "paused-session-automatic-loop-multi-iteration-executor-approval-record.json").write_text(
+                json.dumps(_ready_automatic_loop_multi_iteration_executor_approval_record()),
+                encoding="utf-8",
+            )
+
+            result = make_review_paused_session_automatic_loop_multi_iteration_transaction_preflight_tool(artifact_root)(
+                approval_plan_ref="workspace_paused_session_automatic_loop_multi_iteration_executor_approval_plan",
+                approval_record_ref="workspace_paused_session_automatic_loop_multi_iteration_executor_approval_record",
+            )
+
+            self.assertEqual(result["status"], "ready_for_review")
+            self.assertEqual(result["metadata"]["approval_plan_read"]["artifact_ref"], "workspace_paused_session_automatic_loop_multi_iteration_executor_approval_plan")
+            self.assertEqual(result["metadata"]["approval_record_read"]["artifact_ref"], "workspace_paused_session_automatic_loop_multi_iteration_executor_approval_record")
+
+
+    def test_record_automatic_loop_multi_iteration_transaction_journal_dry_run_is_read_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_root = Path(tmp) / "artifacts"
+            tool = make_record_paused_session_automatic_loop_multi_iteration_transaction_journal_tool(artifact_root)
+            result = tool(
+                transaction_preflight_json=json.dumps(_ready_automatic_loop_multi_iteration_transaction_preflight()),
+                reviewer="alice",
+                reason="Multi-iteration journal input reviewed.",
+            )
+
+            self.assertEqual(result["status"], "planned")
+            self.assertFalse(result["journal_written"])
+            self.assertFalse((artifact_root / "workspace" / "paused-session-automatic-loop-multi-iteration-executor-journal.json").exists())
+            self.assertEqual(result["schema_version"], "reverse-deepagent.paused-session-automatic-loop-multi-iteration-transaction-journal.v1")
+            self.assertFalse(result["side_effect_policy"]["writes_transaction_journal"])
+            self.assertFalse(result["side_effect_policy"]["transaction_started"])
+            self.assertFalse(result["side_effect_policy"]["automatic_loop_executed"])
+            self.assertFalse(result["side_effect_policy"]["automatic_multi_iteration_loop"])
+            self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_record_automatic_loop_multi_iteration_transaction_journal_apply_requires_explicit_gates(self) -> None:
+        tool = make_record_paused_session_automatic_loop_multi_iteration_transaction_journal_tool()
+        result = tool(
+            transaction_preflight_json=json.dumps(_ready_automatic_loop_multi_iteration_transaction_preflight()),
+            mode="apply",
+            write_result=True,
+            approve_transaction_journal=False,
+        )
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn("reviewer_present", result["blockers"])
+        self.assertIn("apply_requires_explicit_transaction_journal", result["blockers"])
+        self.assertFalse(result["journal_written"])
+        self.assertFalse(result["side_effect_policy"]["writes_transaction_journal"])
+
+    def test_record_automatic_loop_multi_iteration_transaction_journal_apply_writes_journal_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_root = Path(tmp) / "artifacts"
+            tool = make_record_paused_session_automatic_loop_multi_iteration_transaction_journal_tool(artifact_root)
+            result = tool(
+                transaction_preflight_json=json.dumps(_ready_automatic_loop_multi_iteration_transaction_preflight()),
+                reviewer="alice",
+                reason="Reviewed multi-iteration journal transaction start.",
+                mode="apply",
+                write_result=True,
+                approve_transaction_journal=True,
+                expected_transaction_id="automatic-loop-multi-iteration-transaction:ready",
+                expected_execution_plan_id="automatic-loop-multi-iteration-execution-plan:ready",
+                expected_preflight_id="automatic-loop-multi-iteration-preflight:ready",
+                expected_policy_id="automatic-loop-policy:ready",
+                metadata_json=json.dumps({"ticket": "DBG-MI-3"}),
+            )
+
+            journal_path = artifact_root / "workspace" / "paused-session-automatic-loop-multi-iteration-executor-journal.json"
+            self.assertEqual(result["status"], "written")
+            self.assertTrue(result["journal_written"])
+            self.assertTrue(result["transaction_started"])
+            self.assertTrue(journal_path.exists())
+            journal = json.loads(journal_path.read_text(encoding="utf-8"))
+            self.assertEqual(journal["schema_version"], "reverse-deepagent.paused-session-automatic-loop-multi-iteration-transaction-journal.v1")
+            self.assertEqual(journal["transaction_id"], "automatic-loop-multi-iteration-transaction:ready")
+            self.assertEqual(journal["execution_plan_id"], "automatic-loop-multi-iteration-execution-plan:ready")
+            self.assertTrue(journal["journal_summary"]["journal_written"])
+            self.assertFalse(journal["journal_summary"]["automatic_loop_executed"])
+            self.assertFalse(journal["journal_summary"]["automatic_multi_iteration_loop"])
+            self.assertEqual(journal["journal_entries"][0]["entry_kind"], "transaction_started")
+            self.assertEqual(journal["journal_entries"][1]["entry_kind"], "planned_multi_iteration_step_journaled")
+            self.assertEqual(journal["journal_entries"][2]["method"], "Debugger.stepInto")
+            self.assertFalse(journal["journal_entries"][1]["executed_now"])
+            self.assertTrue(journal["executor_input_gates"]["transaction_started"])
+            self.assertTrue(journal["executor_input_gates"]["journal_written"])
+            self.assertFalse(journal["executor_input_gates"]["ready_to_execute_now"])
+            self.assertFalse(journal["executor_input_gates"]["automatic_multi_iteration_loop"])
+            self.assertEqual(journal["metadata"]["ticket"], "DBG-MI-3")
+            self.assertTrue(journal["side_effect_policy"]["writes_transaction_journal"])
+            self.assertFalse(journal["side_effect_policy"]["automatic_loop_executed"])
+            self.assertFalse(journal["side_effect_policy"]["automatic_multi_iteration_loop"])
+            self.assertFalse(journal["side_effect_policy"]["cdp_command_sent"])
+            self.assertFalse(journal["side_effect_policy"]["calls_mcp"])
+            self.assertFalse(journal["side_effect_policy"]["mobile_runtime_used"])
+
+    def test_record_automatic_loop_multi_iteration_transaction_journal_blocks_existing_journal(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_root = Path(tmp) / "artifacts"
+            workspace = artifact_root / "workspace"
+            workspace.mkdir(parents=True)
+            (workspace / "paused-session-automatic-loop-multi-iteration-executor-journal.json").write_text(
+                json.dumps({"schema_version": "existing"}),
+                encoding="utf-8",
+            )
+            tool = make_record_paused_session_automatic_loop_multi_iteration_transaction_journal_tool(artifact_root)
+            result = tool(
+                transaction_preflight_json=json.dumps(_ready_automatic_loop_multi_iteration_transaction_preflight()),
+                reviewer="alice",
+                mode="apply",
+                write_result=True,
+                approve_transaction_journal=True,
+            )
+
+            self.assertEqual(result["status"], "blocked")
+            self.assertIn("journal_file_not_already_present", result["blockers"])
+            self.assertFalse(result["journal_written"])
+            self.assertEqual(json.loads((workspace / "paused-session-automatic-loop-multi-iteration-executor-journal.json").read_text(encoding="utf-8"))["schema_version"], "existing")
+
+    def test_record_automatic_loop_multi_iteration_transaction_journal_reads_artifact_ref(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_root = Path(tmp) / "artifacts"
+            workspace = artifact_root / "workspace"
+            workspace.mkdir(parents=True)
+            (workspace / "paused-session-automatic-loop-multi-iteration-transaction-preflight.json").write_text(
+                json.dumps(_ready_automatic_loop_multi_iteration_transaction_preflight()),
+                encoding="utf-8",
+            )
+            result = make_record_paused_session_automatic_loop_multi_iteration_transaction_journal_tool(artifact_root)(
+                transaction_preflight_ref="workspace_paused_session_automatic_loop_multi_iteration_transaction_preflight",
+                reviewer="alice",
+            )
+
+            self.assertEqual(result["status"], "planned")
+            self.assertEqual(result["metadata"]["artifact_read"]["artifact_ref"], "workspace_paused_session_automatic_loop_multi_iteration_transaction_preflight")
+
+    def test_review_automatic_loop_multi_iteration_bounded_executor_gate_is_read_only(self) -> None:
+        tool = make_review_paused_session_automatic_loop_multi_iteration_bounded_executor_gate_tool()
+        result = tool(
+            transaction_journal_json=json.dumps(_ready_automatic_loop_multi_iteration_transaction_journal()),
+            expected_transaction_id="automatic-loop-multi-iteration-transaction:ready",
+            expected_execution_plan_id="automatic-loop-multi-iteration-execution-plan:ready",
+            expected_preflight_id="automatic-loop-multi-iteration-preflight:ready",
+            expected_policy_id="automatic-loop-policy:ready",
+            max_iterations=2,
+        )
+
+        self.assertEqual(result["schema_version"], "reverse-deepagent.paused-session-automatic-loop-multi-iteration-bounded-executor-gate.v1")
+        self.assertEqual(result["status"], "ready_for_review")
+        self.assertTrue(result["bounded_executor_gate_ready_for_review"])
+        self.assertTrue(result["multi_iteration_bounded_executor_gate_ready_for_review"])
+        self.assertFalse(result["ready_to_execute_now"])
+        self.assertFalse(result["automatic_loop_executed"])
+        self.assertFalse(result["automatic_multi_iteration_loop"])
+        self.assertFalse(result["automatic_multi_iteration_executor_implemented"])
+        self.assertFalse(result["automatic_multi_iteration_execution_allowed_now"])
+        self.assertEqual(result["bounded_executor_input"]["max_iterations"], 2)
+        self.assertEqual(result["bounded_executor_input"]["planned_iteration_count"], 2)
+        self.assertFalse(result["bounded_executor_input"]["automatic_queue_advance_allowed"])
+        self.assertFalse(result["bounded_executor_input"]["automatic_live_callframe_recovery_allowed"])
+        self.assertEqual(result["planned_iterations"][1]["method"], "Debugger.stepInto")
+        self.assertTrue(result["planned_iterations"][0]["requires_stop_after_checkpoint"])
+        self.assertEqual(result["future_executor_contract"]["executor_name"], "execute_paused_session_automatic_loop_multi_iteration")
+        self.assertFalse(result["future_executor_contract"]["implemented"])
+        self.assertEqual(result["future_executor_contract"]["result_contract"]["artifact"], "workspace/paused-session-automatic-loop-multi-iteration-execution-result.json")
+        self.assertFalse(result["side_effect_policy"]["writes_artifact"])
+        self.assertFalse(result["side_effect_policy"]["automatic_multi_iteration_loop"])
+        self.assertFalse(result["side_effect_policy"]["automatic_multi_iteration_executor_implemented"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+        self.assertFalse(result["side_effect_policy"]["calls_mcp"])
+        self.assertFalse(result["side_effect_policy"]["mobile_runtime_used"])
+
+    def test_review_automatic_loop_multi_iteration_bounded_executor_gate_blocks_bad_journal(self) -> None:
+        journal = _ready_automatic_loop_multi_iteration_transaction_journal()
+        journal["journal_written"] = False
+        journal["executor_input_gates"]["automatic_multi_iteration_executor_implemented"] = True
+        journal["side_effect_policy"]["automatic_multi_iteration_loop"] = True
+        result = make_review_paused_session_automatic_loop_multi_iteration_bounded_executor_gate_tool()(
+            transaction_journal_json=json.dumps(journal),
+            max_iterations=3,
+        )
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn("transaction_journal_written", result["blockers"])
+        self.assertIn("journal_not_already_executed", result["blockers"])
+        self.assertIn("multi_iteration_executor_not_implemented_yet", result["blockers"])
+        self.assertIn("max_iterations_within_planned_entries", result["blockers"])
+        self.assertFalse(result["multi_iteration_bounded_executor_gate_ready_for_review"])
+        self.assertFalse(result["side_effect_policy"]["automatic_multi_iteration_loop"])
+
+    def test_review_automatic_loop_multi_iteration_bounded_executor_gate_reads_artifact_ref(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_root = Path(tmp) / "artifacts"
+            workspace = artifact_root / "workspace"
+            workspace.mkdir(parents=True)
+            (workspace / "paused-session-automatic-loop-multi-iteration-executor-journal.json").write_text(
+                json.dumps(_ready_automatic_loop_multi_iteration_transaction_journal()),
+                encoding="utf-8",
+            )
+            result = make_review_paused_session_automatic_loop_multi_iteration_bounded_executor_gate_tool(artifact_root)(
+                transaction_journal_ref="workspace_paused_session_automatic_loop_multi_iteration_executor_journal",
+            )
+
+            self.assertEqual(result["status"], "ready_for_review")
+            self.assertEqual(result["metadata"]["artifact_read"]["artifact_ref"], "workspace_paused_session_automatic_loop_multi_iteration_executor_journal")
+
+    def test_record_automatic_loop_transaction_journal_dry_run_is_read_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_root = Path(tmp) / "artifacts"
+            tool = make_record_paused_session_automatic_loop_transaction_journal_tool(artifact_root)
+            result = tool(
+                transaction_preflight_json=json.dumps(_ready_automatic_loop_transaction_preflight()),
+                reviewer="alice",
+                reason="Journal input reviewed.",
+            )
+
+            self.assertEqual(result["status"], "planned")
+            self.assertFalse(result["journal_written"])
+            self.assertFalse((artifact_root / "workspace" / "paused-session-automatic-loop-executor-journal.json").exists())
+            self.assertFalse(result["side_effect_policy"]["writes_transaction_journal"])
+            self.assertFalse(result["side_effect_policy"]["transaction_started"])
+            self.assertFalse(result["side_effect_policy"]["automatic_loop_executed"])
+            self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+
+    def test_record_automatic_loop_transaction_journal_apply_requires_explicit_gates(self) -> None:
+        tool = make_record_paused_session_automatic_loop_transaction_journal_tool()
+        result = tool(
+            transaction_preflight_json=json.dumps(_ready_automatic_loop_transaction_preflight()),
+            mode="apply",
+            write_result=True,
+            approve_transaction_journal=False,
+        )
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn("reviewer_present", result["blockers"])
+        self.assertIn("apply_requires_explicit_transaction_journal", result["blockers"])
+        self.assertFalse(result["journal_written"])
+        self.assertFalse(result["side_effect_policy"]["writes_transaction_journal"])
+
+    def test_record_automatic_loop_transaction_journal_apply_writes_journal_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_root = Path(tmp) / "artifacts"
+            tool = make_record_paused_session_automatic_loop_transaction_journal_tool(artifact_root)
+            result = tool(
+                transaction_preflight_json=json.dumps(_ready_automatic_loop_transaction_preflight()),
+                reviewer="alice",
+                reason="Reviewed journal transaction start.",
+                mode="apply",
+                write_result=True,
+                approve_transaction_journal=True,
+                expected_transaction_id="automatic-loop-executor-transaction:preflight-1",
+                expected_preflight_id="preflight-1",
+                metadata_json=json.dumps({"ticket": "DBG-3"}),
+            )
+
+            journal_path = artifact_root / "workspace" / "paused-session-automatic-loop-executor-journal.json"
+            self.assertEqual(result["status"], "written")
+            self.assertTrue(result["journal_written"])
+            self.assertTrue(result["transaction_started"])
+            self.assertTrue(journal_path.exists())
+            journal = json.loads(journal_path.read_text(encoding="utf-8"))
+            self.assertEqual(journal["schema_version"], "reverse-deepagent.paused-session-automatic-loop-transaction-journal.v1")
+            self.assertEqual(journal["transaction_id"], "automatic-loop-executor-transaction:preflight-1")
+            self.assertTrue(journal["journal_summary"]["journal_written"])
+            self.assertFalse(journal["journal_summary"]["automatic_loop_executed"])
+            self.assertEqual(journal["journal_entries"][0]["entry_kind"], "transaction_started")
+            self.assertEqual(journal["journal_entries"][1]["entry_kind"], "planned_iteration_journaled")
+            self.assertFalse(journal["journal_entries"][1]["executed_now"])
+            self.assertTrue(journal["executor_input_gates"]["transaction_started"])
+            self.assertTrue(journal["executor_input_gates"]["journal_written"])
+            self.assertFalse(journal["executor_input_gates"]["automatic_loop_executed"])
+            self.assertEqual(journal["metadata"]["ticket"], "DBG-3")
+            self.assertTrue(journal["side_effect_policy"]["writes_transaction_journal"])
+            self.assertFalse(journal["side_effect_policy"]["automatic_loop_executed"])
+            self.assertFalse(journal["side_effect_policy"]["cdp_command_sent"])
+            self.assertFalse(journal["side_effect_policy"]["calls_mcp"])
+            self.assertFalse(journal["side_effect_policy"]["mobile_runtime_used"])
+
+    def test_record_automatic_loop_transaction_journal_blocks_existing_journal(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_root = Path(tmp) / "artifacts"
+            workspace = artifact_root / "workspace"
+            workspace.mkdir(parents=True)
+            (workspace / "paused-session-automatic-loop-executor-journal.json").write_text(
+                json.dumps({"schema_version": "existing"}),
+                encoding="utf-8",
+            )
+            tool = make_record_paused_session_automatic_loop_transaction_journal_tool(artifact_root)
+            result = tool(
+                transaction_preflight_json=json.dumps(_ready_automatic_loop_transaction_preflight()),
+                reviewer="alice",
+                mode="apply",
+                write_result=True,
+                approve_transaction_journal=True,
+            )
+
+            self.assertEqual(result["status"], "blocked")
+            self.assertIn("journal_file_not_already_present", result["blockers"])
+            self.assertFalse(result["journal_written"])
+            self.assertEqual(json.loads((workspace / "paused-session-automatic-loop-executor-journal.json").read_text(encoding="utf-8"))["schema_version"], "existing")
+
+    def test_record_automatic_loop_transaction_journal_reads_artifact_ref(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_root = Path(tmp) / "artifacts"
+            workspace = artifact_root / "workspace"
+            workspace.mkdir(parents=True)
+            (workspace / "paused-session-automatic-loop-transaction-preflight.json").write_text(
+                json.dumps(_ready_automatic_loop_transaction_preflight()),
+                encoding="utf-8",
+            )
+            result = make_record_paused_session_automatic_loop_transaction_journal_tool(artifact_root)(
+                transaction_preflight_ref="workspace_paused_session_automatic_loop_transaction_preflight",
+                reviewer="alice",
+            )
+
+            self.assertEqual(result["status"], "planned")
+            self.assertEqual(result["metadata"]["artifact_read"]["artifact_ref"], "workspace_paused_session_automatic_loop_transaction_preflight")
+
+    def test_review_automatic_loop_bounded_executor_gate_is_read_only(self) -> None:
+        tool = make_review_paused_session_automatic_loop_bounded_executor_gate_tool()
+        result = tool(
+            transaction_journal_json=json.dumps(_ready_automatic_loop_transaction_journal()),
+            expected_transaction_id="automatic-loop-executor-transaction:preflight-1",
+            max_iterations=1,
+        )
+
+        self.assertEqual(result["status"], "ready_for_review")
+        self.assertTrue(result["bounded_executor_gate_ready_for_review"])
+        self.assertFalse(result["ready_to_execute_now"])
+        self.assertFalse(result["automatic_loop_executed"])
+        self.assertEqual(result["bounded_executor_input"]["max_iterations"], 1)
+        self.assertEqual(result["future_executor_contract"]["executor_name"], "execute_paused_session_automatic_loop")
+        self.assertFalse(result["future_executor_contract"]["implemented"])
+        self.assertEqual(result["future_executor_contract"]["result_contract"]["artifact"], "workspace/paused-session-automatic-loop-execution-result.json")
+        self.assertFalse(result["side_effect_policy"]["writes_artifact"])
+        self.assertFalse(result["side_effect_policy"]["cdp_command_sent"])
+        self.assertFalse(result["side_effect_policy"]["calls_mcp"])
+        self.assertFalse(result["side_effect_policy"]["mobile_runtime_used"])
+
+    def test_review_automatic_loop_bounded_executor_gate_blocks_bad_journal(self) -> None:
+        journal = _ready_automatic_loop_transaction_journal()
+        journal["journal_written"] = False
+        journal["side_effect_policy"]["automatic_loop_executed"] = True
+        result = make_review_paused_session_automatic_loop_bounded_executor_gate_tool()(
+            transaction_journal_json=json.dumps(journal),
+            max_iterations=2,
+        )
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn("transaction_journal_written", result["blockers"])
+        self.assertIn("journal_not_already_executed", result["blockers"])
+        self.assertIn("max_iterations_within_planned_entries", result["blockers"])
+        self.assertFalse(result["bounded_executor_gate_ready_for_review"])
+        self.assertFalse(result["side_effect_policy"]["automatic_loop_executed"])
+
+    def test_review_automatic_loop_bounded_executor_gate_reads_artifact_ref(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_root = Path(tmp) / "artifacts"
+            workspace = artifact_root / "workspace"
+            workspace.mkdir(parents=True)
+            (workspace / "paused-session-automatic-loop-executor-journal.json").write_text(
+                json.dumps(_ready_automatic_loop_transaction_journal()),
+                encoding="utf-8",
+            )
+            result = make_review_paused_session_automatic_loop_bounded_executor_gate_tool(artifact_root)(
+                transaction_journal_ref="workspace_paused_session_automatic_loop_executor_journal",
+            )
+
+            self.assertEqual(result["status"], "ready_for_review")
+            self.assertEqual(result["metadata"]["artifact_read"]["artifact_ref"], "workspace_paused_session_automatic_loop_executor_journal")
+
+    def test_build_debugger_subagent_exposes_review_and_approval_record_tools(self) -> None:
         subagent = build_debugger_subagent()
 
         self.assertEqual(subagent["name"], DEBUGGER_SUBAGENT_NAME)
         self.assertEqual(subagent["description"], DEBUGGER_SUBAGENT_DESCRIPTION)
         self.assertIn("Debugger Subagent", subagent["system_prompt"])
         tool_names = {tool.__name__ for tool in subagent["tools"]}
-        self.assertEqual(tool_names, {"review_debugger_artifacts"})
+        self.assertEqual(
+            tool_names,
+            {
+                "read_workspace_artifact",
+                "review_debugger_artifacts",
+                "record_paused_session_automatic_loop_executor_approval",
+                "record_paused_session_automatic_loop_multi_iteration_executor_approval",
+                "review_paused_session_automatic_loop_multi_iteration_transaction_preflight",
+                "record_paused_session_automatic_loop_multi_iteration_transaction_journal",
+                "review_paused_session_automatic_loop_multi_iteration_bounded_executor_gate",
+                "review_paused_session_automatic_loop_transaction_preflight",
+                "record_paused_session_automatic_loop_transaction_journal",
+                "review_paused_session_automatic_loop_bounded_executor_gate",
+            },
+        )
 
     def test_prompt_loader_supports_custom_path(self) -> None:
         path = Path(__file__).resolve().parents[1] / "src/reverse_deepagent/prompts/debugger.txt"
-        self.assertIn("read-only debugger artifact review", load_debugger_prompt(path))
+        self.assertIn("approval record", load_debugger_prompt(path))
+        self.assertIn("review_paused_session_automatic_loop_transaction_preflight", load_debugger_prompt(path))
+        self.assertIn("record_paused_session_automatic_loop_transaction_journal", load_debugger_prompt(path))
+        self.assertIn("record_paused_session_automatic_loop_multi_iteration_executor_approval", load_debugger_prompt(path))
+        self.assertIn("review_paused_session_automatic_loop_multi_iteration_transaction_preflight", load_debugger_prompt(path))
+        self.assertIn("record_paused_session_automatic_loop_multi_iteration_transaction_journal", load_debugger_prompt(path))
+        self.assertIn("review_paused_session_automatic_loop_multi_iteration_bounded_executor_gate", load_debugger_prompt(path))
+        self.assertIn("review_paused_session_automatic_loop_bounded_executor_gate", load_debugger_prompt(path))
+        self.assertIn("preflight-only", load_debugger_prompt(path))
 
     def test_default_agent_includes_debugger_before_timeline(self) -> None:
         captured = {}
@@ -127,3 +3650,782 @@ class DebuggerSubagentTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SourceMapDebuggerExecutionReviewTests(unittest.TestCase):
+    def test_review_debugger_artifacts_warns_for_source_map_debugger_execution_result(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_debugger_execution_result": {
+                "schema_version": "reverse-deepagent.source-map-debugger-execution-result.v1",
+                "status": "success",
+                "selected_consumer": "debugger",
+                "selected_review_gate": "explicit_debugger_location_review",
+                "debugger_location_applied": True,
+                "breakpoint_count": 1,
+                "paused_status": "success",
+                "callframe_count": 1,
+                "debugger_action_count": 1,
+                "automatic_continuation": False,
+                "automatic_loop": False,
+                "calls_mcp": False,
+                "mobile_runtime_used": False,
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_debugger_execution_result_requires_debugger_artifact_review", result["warnings"])
+        self.assertEqual(result["next_action"], "inspect_source_map_debugger_execution_artifacts")
+        summary = result["summary"]["source_map_debugger_execution_result"]
+        self.assertEqual(summary["status"], "success")
+        self.assertTrue(summary["debugger_location_applied"])
+        self.assertEqual(summary["breakpoint_count"], 1)
+        self.assertFalse(summary["automatic_continuation"])
+        self.assertFalse(summary["automatic_loop"])
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_debugger_execution_result(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_debugger_execution_result": {
+                "status": "blocked",
+                "blockers": ["source_map_debugger_action_not_approved"],
+                "automatic_continuation": False,
+                "automatic_loop": False,
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_debugger_execution_result_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_debugger_execution_failure")
+
+
+    def test_review_debugger_artifacts_warns_for_source_map_followthrough_chain_readiness(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_followthrough_chain_readiness": {
+                "schema_version": "reverse-deepagent.source-map-followthrough-chain-readiness.v1",
+                "status": "ready_for_review",
+                "selected_consumer": "debugger",
+                "completed_stage": "source_map_selected_executor_apply_preflight",
+                "next_stage": "selected_executor_result_review",
+                "next_action": "review_source_map_debugger_executor_application",
+                "automatic_followthrough_supported": False,
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_followthrough_chain_readiness_requires_next_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_followthrough_chain_readiness_next_action")
+        summary = result["summary"]["source_map_followthrough_chain_readiness"]
+        self.assertEqual(summary["status"], "ready_for_review")
+        self.assertEqual(summary["selected_consumer"], "debugger")
+        self.assertEqual(summary["completed_stage"], "source_map_selected_executor_apply_preflight")
+        self.assertEqual(summary["next_stage"], "selected_executor_result_review")
+        self.assertFalse(summary["automatic_followthrough_supported"])
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_followthrough_chain_readiness(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {"source_map_followthrough_chain_readiness": {"status": "blocked", "blockers": ["source_map_followthrough_chain_evidence_missing"]}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_followthrough_chain_readiness_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_followthrough_chain_readiness_failure")
+
+    def test_review_debugger_artifacts_warns_for_source_map_followthrough_one_step_plan(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_followthrough_one_step_plan": {
+                "schema_version": "reverse-deepagent.source-map-followthrough-one-step-plan.v1",
+                "status": "ready_for_review",
+                "selected_consumer": "debugger",
+                "source_chain_completed_stage": "source_map_selected_executor_apply_preflight",
+                "source_chain_next_stage": "selected_executor_result_review",
+                "source_chain_next_action": "review_source_map_debugger_executor_application",
+                "planned_step_ready_for_review": True,
+                "automatic_followthrough_supported": False,
+                "automatic_execution_supported": False,
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_followthrough_one_step_plan_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_followthrough_one_step_plan_before_next_action")
+        summary = result["summary"]["source_map_followthrough_one_step_plan"]
+        self.assertEqual(summary["status"], "ready_for_review")
+        self.assertEqual(summary["selected_consumer"], "debugger")
+        self.assertEqual(summary["source_chain_completed_stage"], "source_map_selected_executor_apply_preflight")
+        self.assertEqual(summary["source_chain_next_stage"], "selected_executor_result_review")
+        self.assertTrue(summary["planned_step_ready_for_review"])
+        self.assertFalse(summary["automatic_followthrough_supported"])
+        self.assertFalse(summary["automatic_execution_supported"])
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_followthrough_one_step_plan(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {"source_map_followthrough_one_step_plan": {"status": "blocked", "blockers": ["source_map_followthrough_chain_readiness_not_ready"]}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_followthrough_one_step_plan_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_followthrough_one_step_plan_failure")
+
+    def test_review_debugger_artifacts_warns_for_source_map_followthrough_dispatch_preflight(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_followthrough_dispatch_preflight": {
+                "schema_version": "reverse-deepagent.source-map-followthrough-dispatch-preflight.v1",
+                "status": "ready_for_review",
+                "selected_consumer": "debugger",
+                "planned_next_action": "review_source_map_debugger_executor_application",
+                "planned_required_artifact": "workspace/source-map-debugger-execution-result.json",
+                "dispatch_target": {"dispatch_surface": "source-map-debugger-execution-result"},
+                "dispatcher_input_ready_for_review": True,
+                "automatic_dispatch_supported": False,
+                "automatic_followthrough_supported": False,
+                "automatic_execution_supported": False,
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_followthrough_dispatch_preflight_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_followthrough_dispatch_preflight_before_explicit_executor_call")
+        summary = result["summary"]["source_map_followthrough_dispatch_preflight"]
+        self.assertEqual(summary["status"], "ready_for_review")
+        self.assertEqual(summary["selected_consumer"], "debugger")
+        self.assertEqual(summary["dispatch_surface"], "source-map-debugger-execution-result")
+        self.assertTrue(summary["dispatcher_input_ready_for_review"])
+        self.assertFalse(summary["automatic_dispatch_supported"])
+        self.assertFalse(summary["automatic_followthrough_supported"])
+        self.assertFalse(summary["automatic_execution_supported"])
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_followthrough_dispatch_preflight(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {"source_map_followthrough_dispatch_preflight": {"status": "blocked", "blockers": ["source_map_followthrough_dispatch_target_unsupported"]}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_followthrough_dispatch_preflight_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_followthrough_dispatch_preflight_failure")
+
+    def test_review_debugger_artifacts_warns_for_source_map_followthrough_dispatch_approval_plan(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_followthrough_dispatch_approval_plan": {
+                "schema_version": "reverse-deepagent.source-map-followthrough-dispatch-approval-plan.v1",
+                "status": "ready_for_review",
+                "selected_consumer": "debugger",
+                "dispatch_surface": "source-map-debugger-execution-result",
+                "approval_plan_ready_for_review": True,
+                "transaction_plan_ready_for_review": True,
+                "ready_to_dispatch_now": False,
+                "approval_recorded": False,
+                "transaction_started": False,
+                "automatic_dispatch_supported": False,
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_followthrough_dispatch_approval_plan_requires_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_followthrough_dispatch_approval_plan_before_recording_approval")
+        summary = result["summary"]["source_map_followthrough_dispatch_approval_plan"]
+        self.assertEqual(summary["status"], "ready_for_review")
+        self.assertEqual(summary["selected_consumer"], "debugger")
+        self.assertEqual(summary["dispatch_surface"], "source-map-debugger-execution-result")
+        self.assertTrue(summary["approval_plan_ready_for_review"])
+        self.assertTrue(summary["transaction_plan_ready_for_review"])
+        self.assertFalse(summary["ready_to_dispatch_now"])
+        self.assertFalse(summary["approval_recorded"])
+        self.assertFalse(summary["transaction_started"])
+        self.assertFalse(summary["automatic_dispatch_supported"])
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_followthrough_dispatch_approval_plan(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {"source_map_followthrough_dispatch_approval_plan": {"status": "blocked", "blockers": ["source_map_followthrough_dispatch_preflight_not_ready"]}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_followthrough_dispatch_approval_plan_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_followthrough_dispatch_approval_plan_failure")
+
+    def test_review_debugger_artifacts_warns_for_source_map_followthrough_dispatch_approval_record(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_followthrough_dispatch_approval_record": {
+                "schema_version": "reverse-deepagent.source-map-followthrough-dispatch-approval-record.v1",
+                "status": "written",
+                "selected_consumer": "debugger",
+                "dispatch_surface": "source-map-debugger-execution-result",
+                "approved_for_dispatch": True,
+                "dispatch_input_gates": {
+                    "transaction_started": False,
+                    "journal_written": False,
+                },
+                "next_action": "review_source_map_followthrough_dispatch_transaction_preflight",
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_followthrough_dispatch_approval_record_ready_for_transaction_preflight", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_followthrough_dispatch_transaction_preflight")
+        summary = result["summary"]["source_map_followthrough_dispatch_approval_record"]
+        self.assertEqual(summary["status"], "written")
+        self.assertEqual(summary["selected_consumer"], "debugger")
+        self.assertEqual(summary["dispatch_surface"], "source-map-debugger-execution-result")
+        self.assertTrue(summary["approved_for_dispatch"])
+        self.assertFalse(summary["transaction_started"])
+        self.assertFalse(summary["journal_written"])
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_followthrough_dispatch_approval_record(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {"source_map_followthrough_dispatch_approval_record": {"status": "blocked", "blockers": ["reviewer_present"]}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_followthrough_dispatch_approval_record_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "provide_ready_source_map_followthrough_dispatch_approval_plan_descriptor")
+
+    def test_review_debugger_artifacts_warns_for_source_map_followthrough_dispatch_transaction_preflight(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_followthrough_dispatch_transaction_preflight": {
+                "schema_version": "reverse-deepagent.source-map-followthrough-dispatch-transaction-preflight.v1",
+                "status": "ready_for_review",
+                "selected_consumer": "debugger",
+                "dispatch_surface": "source-map-debugger-execution-result",
+                "transaction_preflight_ready_for_review": True,
+                "journal_writer_gate_ready_for_review": True,
+                "next_action": "review_source_map_followthrough_dispatch_transaction_journal_writer",
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_followthrough_dispatch_transaction_preflight_ready_for_journal_writer", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_followthrough_dispatch_transaction_journal_writer")
+        summary = result["summary"]["source_map_followthrough_dispatch_transaction_preflight"]
+        self.assertEqual(summary["status"], "ready_for_review")
+        self.assertEqual(summary["selected_consumer"], "debugger")
+        self.assertEqual(summary["dispatch_surface"], "source-map-debugger-execution-result")
+        self.assertTrue(summary["transaction_preflight_ready_for_review"])
+        self.assertTrue(summary["journal_writer_gate_ready_for_review"])
+        self.assertEqual(summary["next_action"], "review_source_map_followthrough_dispatch_transaction_journal_writer")
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_followthrough_dispatch_transaction_preflight(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {"source_map_followthrough_dispatch_transaction_preflight": {"status": "blocked", "blockers": ["approval_record_missing"]}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_followthrough_dispatch_transaction_preflight_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_followthrough_dispatch_transaction_preflight_failure")
+
+    def test_review_debugger_artifacts_warns_for_source_map_followthrough_dispatch_transaction_journal(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_followthrough_dispatch_transaction_journal": {
+                "schema_version": "reverse-deepagent.source-map-followthrough-dispatch-transaction-journal.v1",
+                "status": "written",
+                "selected_consumer": "debugger",
+                "dispatch_surface": "source-map-debugger-execution-result",
+                "journal_written": True,
+                "transaction_started": True,
+                "next_action": "review_source_map_followthrough_dispatch_bounded_executor_gate",
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_followthrough_dispatch_transaction_journal_ready_for_bounded_gate", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_followthrough_dispatch_bounded_executor_gate")
+        summary = result["summary"]["source_map_followthrough_dispatch_transaction_journal"]
+        self.assertEqual(summary["status"], "written")
+        self.assertEqual(summary["selected_consumer"], "debugger")
+        self.assertEqual(summary["dispatch_surface"], "source-map-debugger-execution-result")
+        self.assertTrue(summary["journal_written"])
+        self.assertTrue(summary["transaction_started"])
+        self.assertEqual(summary["next_action"], "review_source_map_followthrough_dispatch_bounded_executor_gate")
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_followthrough_dispatch_transaction_journal(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {"source_map_followthrough_dispatch_transaction_journal": {"status": "blocked", "blockers": ["transaction_preflight_missing"]}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_followthrough_dispatch_transaction_journal_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_followthrough_dispatch_transaction_journal_failure")
+
+    def test_review_debugger_artifacts_warns_for_source_map_followthrough_dispatch_bounded_executor_gate(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_followthrough_dispatch_bounded_executor_gate": {
+                "status": "ready_for_review",
+                "selected_consumer": "debugger",
+                "dispatch_surface": "source-map-debugger-execution-result",
+                "bounded_executor_gate_ready_for_review": True,
+                "ready_for_dispatcher_handoff_review": True,
+                "next_action": "review_source_map_followthrough_dispatcher_handoff",
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_followthrough_dispatch_bounded_executor_gate_ready_for_dispatcher_handoff", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_followthrough_dispatcher_handoff")
+        summary = result["summary"]["source_map_followthrough_dispatch_bounded_executor_gate"]
+        self.assertEqual(summary["status"], "ready_for_review")
+        self.assertTrue(summary["bounded_executor_gate_ready_for_review"])
+        self.assertTrue(summary["ready_for_dispatcher_handoff_review"])
+        self.assertEqual(summary["next_action"], "review_source_map_followthrough_dispatcher_handoff")
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_followthrough_dispatch_bounded_executor_gate(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {"source_map_followthrough_dispatch_bounded_executor_gate": {"status": "blocked", "blockers": ["transaction_journal_written"]}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_followthrough_dispatch_bounded_executor_gate_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_followthrough_dispatch_bounded_executor_gate_failure")
+
+    def test_review_debugger_artifacts_warns_for_source_map_followthrough_dispatcher_handoff(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_followthrough_dispatcher_handoff": {
+                "status": "ready_for_review",
+                "selected_consumer": "debugger",
+                "dispatch_surface": "source-map-debugger-execution-result",
+                "dispatcher_handoff_ready_for_review": True,
+                "ready_for_explicit_dispatch_review": True,
+                "next_action": "review_source_map_followthrough_dispatcher_apply_preflight",
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_followthrough_dispatcher_handoff_ready_for_apply_preflight_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_followthrough_dispatcher_apply_preflight")
+        summary = result["summary"]["source_map_followthrough_dispatcher_handoff"]
+        self.assertEqual(summary["status"], "ready_for_review")
+        self.assertTrue(summary["dispatcher_handoff_ready_for_review"])
+        self.assertTrue(summary["ready_for_explicit_dispatch_review"])
+        self.assertEqual(summary["next_action"], "review_source_map_followthrough_dispatcher_apply_preflight")
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_followthrough_dispatcher_handoff(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {"source_map_followthrough_dispatcher_handoff": {"status": "blocked", "blockers": ["bounded_gate_ready"]}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_followthrough_dispatcher_handoff_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_followthrough_dispatcher_handoff_failure")
+
+    def test_review_debugger_artifacts_warns_for_source_map_followthrough_dispatcher_apply_preflight(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_followthrough_dispatcher_apply_preflight": {
+                "status": "ready_for_review",
+                "selected_consumer": "debugger",
+                "dispatch_surface": "source-map-debugger-execution-result",
+                "dispatcher_apply_preflight_ready_for_review": True,
+                "ready_for_explicit_dispatcher_mvp_review": True,
+                "next_action": "review_source_map_followthrough_dispatcher_mvp",
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_followthrough_dispatcher_apply_preflight_ready_for_dispatcher_mvp", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_followthrough_dispatcher_mvp")
+        summary = result["summary"]["source_map_followthrough_dispatcher_apply_preflight"]
+        self.assertEqual(summary["status"], "ready_for_review")
+        self.assertTrue(summary["dispatcher_apply_preflight_ready_for_review"])
+        self.assertTrue(summary["ready_for_explicit_dispatcher_mvp_review"])
+        self.assertEqual(summary["next_action"], "review_source_map_followthrough_dispatcher_mvp")
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_followthrough_dispatcher_apply_preflight(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {"source_map_followthrough_dispatcher_apply_preflight": {"status": "blocked", "blockers": ["dispatcher_handoff_ready"]}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_followthrough_dispatcher_apply_preflight_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_followthrough_dispatcher_apply_preflight_failure")
+
+    def test_review_debugger_artifacts_warns_for_source_map_followthrough_dispatcher_result(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_followthrough_dispatcher_result": {
+                "status": "dispatched",
+                "selected_consumer": "debugger",
+                "dispatch_surface": "source-map-debugger-execution-result",
+                "dispatcher_decision_recorded": True,
+                "dispatch_target_invoked": False,
+                "selected_executor_invoked": False,
+                "selected_executor_apply_preflight_invoked": False,
+                "next_action": "review_source_map_selected_executor_apply_preflight",
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_followthrough_dispatcher_result_ready_for_selected_executor_apply_preflight", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_selected_executor_apply_preflight")
+        summary = result["summary"]["source_map_followthrough_dispatcher_result"]
+        self.assertEqual(summary["status"], "dispatched")
+        self.assertTrue(summary["dispatcher_decision_recorded"])
+        self.assertFalse(summary["dispatch_target_invoked"])
+        self.assertFalse(summary["selected_executor_invoked"])
+        self.assertFalse(summary["selected_executor_apply_preflight_invoked"])
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_followthrough_dispatcher_result(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {"source_map_followthrough_dispatcher_result": {"status": "blocked", "blockers": ["dispatcher_apply_preflight_ready"]}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_followthrough_dispatcher_result_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_followthrough_dispatcher_result_failure")
+
+    def test_review_debugger_artifacts_warns_for_source_map_selected_executor_application_handoff(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_selected_executor_application_handoff": {
+                "schema_version": "reverse-deepagent.source-map-selected-executor-application-handoff.v1",
+                "status": "ready_for_review",
+                "selected_consumer": "debugger",
+                "application_surface": "source-map-debugger-application",
+                "application_review_action": "review_source_map_debugger_executor_application",
+                "ready_for_application_review": True,
+                "next_action": "review_source_map_debugger_executor_application",
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_selected_executor_application_handoff_ready_for_application_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_selected_executor_application")
+        summary = result["summary"]["source_map_selected_executor_application_handoff"]
+        self.assertEqual(summary["status"], "ready_for_review")
+        self.assertEqual(summary["selected_consumer"], "debugger")
+        self.assertEqual(summary["application_surface"], "source-map-debugger-application")
+        self.assertTrue(summary["ready_for_application_review"])
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_selected_executor_application_handoff(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {"source_map_selected_executor_application_handoff": {"status": "blocked", "blockers": ["source_map_selected_executor_apply_preflight_not_ready"]}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_selected_executor_application_handoff_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_selected_executor_application_handoff_failure")
+
+
+    def test_review_debugger_artifacts_warns_for_source_map_selected_executor_result_checkpoint(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_selected_executor_result_checkpoint": {
+                "schema_version": "reverse-deepagent.source-map-selected-executor-result-checkpoint.v1",
+                "status": "ready_for_review",
+                "selected_consumer": "debugger",
+                "application_surface": "source-map-debugger-application",
+                "application_result_status": "success",
+                "ready_for_next_explicit_review": True,
+                "next_action": "review_source_map_selected_executor_result_checkpoint",
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_selected_executor_result_checkpoint_ready_for_followthrough_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_selected_executor_result_checkpoint")
+        summary = result["summary"]["source_map_selected_executor_result_checkpoint"]
+        self.assertEqual(summary["status"], "ready_for_review")
+        self.assertEqual(summary["selected_consumer"], "debugger")
+        self.assertEqual(summary["application_surface"], "source-map-debugger-application")
+        self.assertTrue(summary["ready_for_next_explicit_review"])
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_selected_executor_result_checkpoint(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {"source_map_selected_executor_result_checkpoint": {"status": "blocked", "blockers": ["source_map_selected_executor_application_result_not_success"]}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_selected_executor_result_checkpoint_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_selected_executor_result_checkpoint_failure")
+
+    def test_review_debugger_artifacts_warns_for_source_map_followthrough_completion_checkpoint(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_followthrough_completion_checkpoint": {
+                "schema_version": "reverse-deepagent.source-map-followthrough-completion-checkpoint.v1",
+                "status": "ready_for_review",
+                "selected_consumer": "debugger",
+                "completion_status": "terminal_review_candidate",
+                "terminal_review_candidate": True,
+                "followup_required": False,
+                "ready_for_completion_review": True,
+                "next_action": "inspect_source_map_debugger_execution_artifacts",
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_followthrough_completion_checkpoint_ready_for_completion_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_followthrough_completion_checkpoint")
+        summary = result["summary"]["source_map_followthrough_completion_checkpoint"]
+        self.assertEqual(summary["status"], "ready_for_review")
+        self.assertEqual(summary["selected_consumer"], "debugger")
+        self.assertEqual(summary["completion_status"], "terminal_review_candidate")
+        self.assertTrue(summary["terminal_review_candidate"])
+        self.assertTrue(summary["ready_for_completion_review"])
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_followthrough_completion_checkpoint(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {"source_map_followthrough_completion_checkpoint": {"status": "blocked", "blockers": ["source_map_selected_executor_result_checkpoint_not_ready"]}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_followthrough_completion_checkpoint_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_followthrough_completion_checkpoint_failure")
+
+    def test_review_debugger_artifacts_warns_for_source_map_terminal_review_package(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_terminal_review_package": {
+                "schema_version": "reverse-deepagent.source-map-terminal-review-package.v1",
+                "status": "ready_for_review",
+                "selected_consumer": "debugger",
+                "completion_status": "terminal_review_candidate",
+                "ready_for_terminal_review": True,
+                "next_action": "review_source_map_terminal_review_package",
+                "terminal_review_package": {"package_kind": "terminal-review-package", "recommended_review_action": "inspect_source_map_debugger_execution_artifacts"},
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_terminal_review_package_ready_for_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_terminal_review_package")
+        summary = result["summary"]["source_map_terminal_review_package"]
+        self.assertEqual(summary["status"], "ready_for_review")
+        self.assertEqual(summary["selected_consumer"], "debugger")
+        self.assertTrue(summary["ready_for_terminal_review"])
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_terminal_review_package(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {"source_map_terminal_review_package": {"status": "blocked", "blockers": ["source_map_followthrough_completion_checkpoint_not_ready"]}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_terminal_review_package_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_terminal_review_package_failure")
+
+    def test_review_debugger_artifacts_warns_for_source_map_terminal_review_closure_checkpoint(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_terminal_review_closure_checkpoint": {
+                "schema_version": "reverse-deepagent.source-map-terminal-review-closure-checkpoint.v1",
+                "status": "ready_for_review",
+                "selected_consumer": "debugger",
+                "closure_status": "terminal_review_observed",
+                "ready_for_closure_audit_review": True,
+                "next_action": "review_source_map_terminal_review_closure_checkpoint",
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_terminal_review_closure_checkpoint_ready_for_closure_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_terminal_review_closure_checkpoint")
+        summary = result["summary"]["source_map_terminal_review_closure_checkpoint"]
+        self.assertEqual(summary["status"], "ready_for_review")
+        self.assertEqual(summary["selected_consumer"], "debugger")
+        self.assertTrue(summary["ready_for_closure_audit_review"])
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_terminal_review_closure_checkpoint(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {"source_map_terminal_review_closure_checkpoint": {"status": "blocked", "blockers": ["source_map_terminal_review_observed_result_missing"]}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_terminal_review_closure_checkpoint_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_terminal_review_closure_checkpoint_failure")
+
+    def test_review_debugger_artifacts_warns_for_source_map_terminal_review_final_audit(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_terminal_review_final_audit": {
+                "schema_version": "reverse-deepagent.source-map-terminal-review-final-audit.v1",
+                "status": "ready_for_review",
+                "selected_consumer": "debugger",
+                "final_audit_status": "source_map_followthrough_review_closed",
+                "ready_for_final_audit_review": True,
+                "next_action": "review_source_map_terminal_review_final_audit",
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_terminal_review_final_audit_ready_for_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_terminal_review_final_audit")
+        summary = result["summary"]["source_map_terminal_review_final_audit"]
+        self.assertEqual(summary["status"], "ready_for_review")
+        self.assertEqual(summary["selected_consumer"], "debugger")
+        self.assertTrue(summary["ready_for_final_audit_review"])
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_terminal_review_final_audit(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {"source_map_terminal_review_final_audit": {"status": "blocked", "blockers": ["source_map_terminal_review_closure_checkpoint_not_ready"]}}
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_terminal_review_final_audit_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_terminal_review_final_audit_failure")
+
+    def test_review_debugger_artifacts_warns_for_source_map_debugger_candidates(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_debugger_candidates": {
+                "schema_version": "reverse-deepagent.source-map-debugger-candidates.v1",
+                "status": "ready_for_review",
+                "requested_symbol": "buildSign",
+                "bundler_kind": "webpack",
+                "candidate_count": 1,
+                "ready_for_debugger_location_review_count": 1,
+                "review_only": True,
+                "plan_only": True,
+                "debugger_execution_performed": False,
+                "breakpoint_installed": False,
+                "automatic_debugger_continuation": False,
+                "calls_mcp": False,
+                "mobile_runtime_used": False,
+                "candidates": [{"candidate_id": "source-map-debugger:test"}],
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_debugger_candidates_require_review", result["warnings"])
+        self.assertEqual(result["next_action"], "review_source_map_debugger_candidates_before_selected_debugger_apply")
+        summary = result["summary"]["source_map_debugger_candidates"]
+        self.assertEqual(summary["status"], "ready_for_review")
+        self.assertEqual(summary["candidate_count"], 1)
+        self.assertEqual(summary["ready_for_debugger_location_review_count"], 1)
+        self.assertEqual(summary["candidate_ids"], ["source-map-debugger:test"])
+        self.assertFalse(summary["debugger_execution_performed"])
+        self.assertFalse(summary["breakpoint_installed"])
+        self.assertFalse(summary["automatic_debugger_continuation"])
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_debugger_candidates(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_debugger_candidates": {
+                "status": "blocked",
+                "blockers": ["source_map_debugger_candidate_source_evidence_missing"],
+                "debugger_execution_performed": False,
+                "breakpoint_installed": False,
+                "automatic_debugger_continuation": False,
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_debugger_candidates_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_debugger_candidate_review_failure")
+
+    def test_review_debugger_artifacts_warns_for_source_map_debugger_candidate_selection(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_debugger_candidate_selection": {
+                "schema_version": "reverse-deepagent.source-map-debugger-candidate-selection.v1",
+                "status": "ready_for_review",
+                "candidate_count": 1,
+                "selected_candidate_id": "source-map-debugger:buildSign",
+                "selected_action_id": "source-map-debugger-candidate:source-map-debugger:buildSign",
+                "selected_consumer": "debugger",
+                "ready_for_selected_executor_input_review": True,
+                "review_only": True,
+                "plan_only": True,
+                "handoff_only": True,
+                "debugger_execution_performed": False,
+                "breakpoint_installed": False,
+                "automatic_debugger_continuation": False,
+                "calls_mcp": False,
+                "mobile_runtime_used": False,
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "warn")
+        self.assertIn("source_map_debugger_candidate_selection_requires_input_review", result["warnings"])
+        self.assertEqual(result["next_action"], "run_source_map_selected_executor_input_review_for_selected_debugger_candidate")
+        summary = result["summary"]["source_map_debugger_candidate_selection"]
+        self.assertEqual(summary["status"], "ready_for_review")
+        self.assertEqual(summary["selected_candidate_id"], "source-map-debugger:buildSign")
+        self.assertTrue(summary["ready_for_selected_executor_input_review"])
+        self.assertFalse(summary["debugger_execution_performed"])
+        self.assertFalse(summary["breakpoint_installed"])
+        self.assertFalse(summary["automatic_debugger_continuation"])
+
+    def test_review_debugger_artifacts_blocks_failed_source_map_debugger_candidate_selection(self) -> None:
+        tool = make_review_debugger_artifacts_tool()
+        payload = {
+            "source_map_debugger_candidate_selection": {
+                "status": "blocked",
+                "blockers": ["source_map_debugger_candidate_selection_ambiguous"],
+                "debugger_execution_performed": False,
+                "breakpoint_installed": False,
+                "automatic_debugger_continuation": False,
+            }
+        }
+
+        result = tool(json.dumps(payload))
+
+        self.assertEqual(result["status"], "block")
+        self.assertIn("source_map_debugger_candidate_selection_blocked", result["blockers"])
+        self.assertEqual(result["next_action"], "inspect_source_map_debugger_candidate_selection_failure")

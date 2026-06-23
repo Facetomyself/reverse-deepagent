@@ -86,10 +86,598 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertEqual(routes["workspace/stitched-flow-physical-rollback-diff.json"].virtual_folder, "/workspace/timeline/")
         self.assertEqual(routes["workspace/stitched-flow-physical-rollback-results.json"].virtual_folder, "/workspace/timeline/")
         self.assertEqual(routes["workspace/stitched-flow.json"].virtual_folder, "/workspace/timeline/")
+        self.assertEqual(routes["workspace/protection-triage-hooks.json"].future_path, "/workspace/hooks/protection-triage-hooks.json")
+        self.assertEqual(routes["workspace/wasm-runtime-candidates.json"].future_path, "/workspace/runtime/wasm-runtime-candidates.json")
+        self.assertEqual(routes["workspace/custom-loader-traversal-graph.json"].virtual_folder, "/workspace/runtime/")
+        self.assertEqual(routes["workspace/custom-loader-traversal-graph.json"].future_path, "/workspace/runtime/custom-loader-traversal-graph.json")
+        self.assertEqual(routes["workspace/heap-snapshot-readiness.json"].virtual_folder, "/workspace/browser/")
+        self.assertEqual(routes["workspace/heap-snapshot-readiness.json"].future_path, "/workspace/browser/heap-snapshot-readiness.json")
+        self.assertEqual(routes["workspace/heap-snapshot-readiness.json"].category, "triage")
+        self.assertEqual(routes["workspace/heap-snapshot-collect.json"].virtual_folder, "/workspace/browser/")
+        self.assertEqual(routes["workspace/heap-snapshot-collect.json"].future_path, "/workspace/browser/heap-snapshot-collect.json")
+        self.assertEqual(routes["workspace/heap-snapshot-collect.json"].category, "audit")
+        self.assertEqual(routes["workspace/heap-snapshot-diff-readiness.json"].virtual_folder, "/workspace/browser/")
+        self.assertEqual(routes["workspace/heap-snapshot-diff-readiness.json"].future_path, "/workspace/browser/heap-snapshot-diff-readiness.json")
+        self.assertEqual(routes["workspace/heap-snapshot-diff-readiness.json"].category, "triage")
+        self.assertEqual(routes["workspace/heap-snapshot-diff-executor-preflight.json"].virtual_folder, "/workspace/browser/")
+        self.assertEqual(routes["workspace/heap-snapshot-diff-executor-preflight.json"].future_path, "/workspace/browser/heap-snapshot-diff-executor-preflight.json")
+        self.assertEqual(routes["workspace/heap-snapshot-diff-executor-preflight.json"].category, "triage")
+        self.assertEqual(routes["workspace/heap-snapshot-diff-executor-approval-plan.json"].virtual_folder, "/workspace/browser/")
+        self.assertEqual(routes["workspace/heap-snapshot-diff-executor-approval-plan.json"].future_path, "/workspace/browser/heap-snapshot-diff-executor-approval-plan.json")
+        self.assertEqual(routes["workspace/heap-snapshot-diff-executor-approval-plan.json"].category, "triage")
+        self.assertEqual(routes["workspace/heap-snapshot-diff-executor-approval-record.json"].virtual_folder, "/workspace/browser/")
+        self.assertEqual(routes["workspace/heap-snapshot-diff-executor-approval-record.json"].future_path, "/workspace/browser/heap-snapshot-diff-executor-approval-record.json")
+        self.assertEqual(routes["workspace/heap-snapshot-diff-executor-approval-record.json"].category, "audit")
+        self.assertEqual(routes["workspace/heap-snapshot-diff-executor-transaction-preflight.json"].virtual_folder, "/workspace/browser/")
+        self.assertEqual(routes["workspace/heap-snapshot-diff-executor-transaction-preflight.json"].future_path, "/workspace/browser/heap-snapshot-diff-executor-transaction-preflight.json")
+        self.assertEqual(routes["workspace/heap-snapshot-diff-executor-transaction-preflight.json"].category, "triage")
+        self.assertEqual(routes["workspace/heap-snapshot-diff-executor-journal.json"].virtual_folder, "/workspace/browser/")
+        self.assertEqual(routes["workspace/heap-snapshot-diff-executor-journal.json"].future_path, "/workspace/browser/heap-snapshot-diff-executor-journal.json")
+        self.assertEqual(routes["workspace/heap-snapshot-diff-executor-journal.json"].category, "audit")
+        self.assertEqual(routes["workspace/heap-snapshot-diff-executor-bounded-gate.json"].virtual_folder, "/workspace/browser/")
+        self.assertEqual(routes["workspace/heap-snapshot-diff-executor-bounded-gate.json"].future_path, "/workspace/browser/heap-snapshot-diff-executor-bounded-gate.json")
+        self.assertEqual(routes["workspace/heap-snapshot-diff-executor-bounded-gate.json"].category, "triage")
+        self.assertEqual(routes["workspace/heap-snapshot-diff-executor-result.json"].virtual_folder, "/workspace/browser/")
+        self.assertEqual(routes["workspace/heap-snapshot-diff-executor-result.json"].future_path, "/workspace/browser/heap-snapshot-diff-executor-result.json")
+        self.assertEqual(routes["workspace/heap-snapshot-diff-executor-result.json"].category, "audit")
+        self.assertEqual(routes["workspace/heap-snapshot-diff-followup-checkpoint.json"].virtual_folder, "/workspace/browser/")
+        self.assertEqual(routes["workspace/heap-snapshot-diff-followup-checkpoint.json"].future_path, "/workspace/browser/heap-snapshot-diff-followup-checkpoint.json")
+        self.assertEqual(routes["workspace/heap-snapshot-diff-followup-checkpoint.json"].category, "audit")
+        self.assertEqual(routes["workspace/heap-snapshot-diff-selected-analysis-input-preflight.json"].virtual_folder, "/workspace/browser/")
+        self.assertEqual(routes["workspace/heap-snapshot-diff-selected-analysis-input-preflight.json"].future_path, "/workspace/browser/heap-snapshot-diff-selected-analysis-input-preflight.json")
+        self.assertEqual(routes["workspace/heap-snapshot-diff-selected-analysis-input-preflight.json"].category, "triage")
+        self.assertEqual(routes["workspace/heap-snapshot-constructor-growth-drilldown.json"].virtual_folder, "/workspace/browser/")
+        self.assertEqual(routes["workspace/heap-snapshot-constructor-growth-drilldown.json"].future_path, "/workspace/browser/heap-snapshot-constructor-growth-drilldown.json")
+        self.assertEqual(routes["workspace/heap-snapshot-constructor-growth-drilldown.json"].category, "triage")
+        self.assertEqual(routes["workspace/heap-snapshot-constructor-growth-drilldown-analysis.json"].virtual_folder, "/workspace/browser/")
+        self.assertEqual(routes["workspace/heap-snapshot-constructor-growth-drilldown-analysis.json"].future_path, "/workspace/browser/heap-snapshot-constructor-growth-drilldown-analysis.json")
+        self.assertEqual(routes["workspace/heap-snapshot-constructor-growth-drilldown-analysis.json"].category, "audit")
+        self.assertEqual(routes["workspace/heap-snapshot-automatic-followup-plan.json"].virtual_folder, "/workspace/browser/")
+        self.assertEqual(routes["workspace/heap-snapshot-automatic-followup-plan.json"].future_path, "/workspace/browser/heap-snapshot-automatic-followup-plan.json")
+        self.assertEqual(routes["workspace/heap-snapshot-automatic-followup-plan.json"].category, "triage")
+        self.assertEqual(routes["workspace/heap-snapshot-retained-size-proof-plan.json"].virtual_folder, "/workspace/browser/")
+        self.assertEqual(routes["workspace/heap-snapshot-retained-size-proof-plan.json"].future_path, "/workspace/browser/heap-snapshot-retained-size-proof-plan.json")
+        self.assertEqual(routes["workspace/heap-snapshot-retained-size-proof-plan.json"].category, "triage")
+        self.assertEqual(routes["workspace/heap-snapshot-path-to-root-proof-plan.json"].virtual_folder, "/workspace/browser/")
+        self.assertEqual(routes["workspace/heap-snapshot-path-to-root-proof-plan.json"].future_path, "/workspace/browser/heap-snapshot-path-to-root-proof-plan.json")
+        self.assertEqual(routes["workspace/heap-snapshot-path-to-root-proof-plan.json"].category, "triage")
+        self.assertEqual(routes["workspace/heap-snapshot-raw-heap-constructor-drilldown-proof-plan.json"].virtual_folder, "/workspace/browser/")
+        self.assertEqual(routes["workspace/heap-snapshot-raw-heap-constructor-drilldown-proof-plan.json"].future_path, "/workspace/browser/heap-snapshot-raw-heap-constructor-drilldown-proof-plan.json")
+        self.assertEqual(routes["workspace/heap-snapshot-raw-heap-constructor-drilldown-proof-plan.json"].category, "triage")
+        self.assertEqual(routes["workspace/heap-snapshot-retained-path-preflight.json"].virtual_folder, "/workspace/browser/")
+        self.assertEqual(routes["workspace/heap-snapshot-retained-path-preflight.json"].future_path, "/workspace/browser/heap-snapshot-retained-path-preflight.json")
+        self.assertEqual(routes["workspace/heap-snapshot-retained-path-preflight.json"].category, "triage")
+        self.assertEqual(routes["workspace/heap-snapshot-retained-size-input-review.json"].virtual_folder, "/workspace/browser/")
+        self.assertEqual(routes["workspace/heap-snapshot-retained-size-input-review.json"].future_path, "/workspace/browser/heap-snapshot-retained-size-input-review.json")
+        self.assertEqual(routes["workspace/heap-snapshot-retained-size-input-review.json"].category, "triage")
+        self.assertEqual(routes["workspace/heap-snapshot-retained-size-approval-plan.json"].virtual_folder, "/workspace/browser/")
+        self.assertEqual(routes["workspace/heap-snapshot-retained-size-approval-plan.json"].future_path, "/workspace/browser/heap-snapshot-retained-size-approval-plan.json")
+        self.assertEqual(routes["workspace/heap-snapshot-retained-size-approval-plan.json"].category, "triage")
+        self.assertEqual(routes["workspace/heap-snapshot-retained-size-approval-record.json"].virtual_folder, "/workspace/browser/")
+        self.assertEqual(routes["workspace/heap-snapshot-retained-size-approval-record.json"].future_path, "/workspace/browser/heap-snapshot-retained-size-approval-record.json")
+        self.assertEqual(routes["workspace/heap-snapshot-retained-size-approval-record.json"].category, "audit")
+        self.assertEqual(routes["workspace/heap-snapshot-retained-size-transaction-preflight.json"].virtual_folder, "/workspace/browser/")
+        self.assertEqual(routes["workspace/heap-snapshot-retained-size-transaction-preflight.json"].future_path, "/workspace/browser/heap-snapshot-retained-size-transaction-preflight.json")
+        self.assertEqual(routes["workspace/heap-snapshot-retained-size-transaction-preflight.json"].category, "triage")
+        self.assertEqual(routes["workspace/heap-snapshot-retained-size-executor-journal.json"].virtual_folder, "/workspace/browser/")
+        self.assertEqual(routes["workspace/heap-snapshot-retained-size-executor-journal.json"].future_path, "/workspace/browser/heap-snapshot-retained-size-executor-journal.json")
+        self.assertEqual(routes["workspace/heap-snapshot-retained-size-executor-journal.json"].category, "audit")
+        self.assertEqual(routes["workspace/heap-snapshot-retained-size-bounded-gate.json"].virtual_folder, "/workspace/browser/")
+        self.assertEqual(routes["workspace/heap-snapshot-retained-size-bounded-gate.json"].future_path, "/workspace/browser/heap-snapshot-retained-size-bounded-gate.json")
+        self.assertEqual(routes["workspace/heap-snapshot-retained-size-bounded-gate.json"].category, "triage")
+        self.assertEqual(routes["workspace/heap-snapshot-retained-size-analysis.json"].virtual_folder, "/workspace/browser/")
+        self.assertEqual(routes["workspace/heap-snapshot-retained-size-analysis.json"].future_path, "/workspace/browser/heap-snapshot-retained-size-analysis.json")
+        self.assertEqual(routes["workspace/heap-snapshot-retained-size-analysis.json"].category, "audit")
+        self.assertEqual(routes["workspace/heap-snapshot-path-to-root-analysis.json"].virtual_folder, "/workspace/browser/")
+        self.assertEqual(routes["workspace/heap-snapshot-path-to-root-analysis.json"].future_path, "/workspace/browser/heap-snapshot-path-to-root-analysis.json")
+        self.assertEqual(routes["workspace/heap-snapshot-path-to-root-analysis.json"].category, "audit")
+        self.assertEqual(routes["workspace/vm-dispatcher-candidates.json"].future_path, "/workspace/runtime/vm-dispatcher-candidates.json")
         self.assertEqual(routes["workspace/review-gate-after-rollback.json"].virtual_folder, "/workspace/review/")
         self.assertEqual(routes["workspace/review-gate-after-physical-rollback.json"].virtual_folder, "/workspace/review/")
         self.assertEqual(routes["workspace/review-gate-replacement-results.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(routes["workspace/review-approval-record.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(routes["workspace/review-approval-record.json"].future_path, "/workspace/review/review-approval-record.json")
+        self.assertEqual(routes["workspace/review-approval-ledger.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(routes["workspace/review-approval-ledger.json"].future_path, "/workspace/review/review-approval-ledger.json")
+        self.assertEqual(routes["workspace/workspace-consumer-readiness-score.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-consumer-readiness-score.json"].future_path,
+            "/workspace/review/workspace-consumer-readiness-score.json",
+        )
+        self.assertEqual(routes["workspace/workspace-consumer-readiness-score.json"].category, "audit")
+        self.assertEqual(routes["workspace/workspace-dual-write-expansion-plan.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-dual-write-expansion-plan.json"].future_path,
+            "/workspace/review/workspace-dual-write-expansion-plan.json",
+        )
+        self.assertEqual(routes["workspace/workspace-dual-write-expansion-plan.json"].category, "triage")
+        self.assertEqual(routes["workspace/workspace-dual-write-expansion-workflow.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-dual-write-expansion-workflow.json"].future_path,
+            "/workspace/review/workspace-dual-write-expansion-workflow.json",
+        )
+        self.assertEqual(routes["workspace/workspace-dual-write-expansion-workflow.json"].category, "triage")
+        self.assertEqual(routes["workspace/workspace-dual-write-expansion-result.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-dual-write-expansion-result.json"].future_path,
+            "/workspace/review/workspace-dual-write-expansion-result.json",
+        )
+        self.assertEqual(routes["workspace/workspace-dual-write-expansion-result.json"].category, "audit")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-pilot-plan.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-migration-pilot-plan.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-migration-pilot-plan.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-pilot-plan.json"].category, "triage")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-preflight.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-migration-preflight.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-migration-preflight.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-preflight.json"].category, "audit")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-apply-plan.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-migration-apply-plan.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-migration-apply-plan.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-apply-plan.json"].category, "triage")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-approval-plan.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-migration-approval-plan.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-migration-approval-plan.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-approval-plan.json"].category, "audit")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-manifest-dry-run.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-migration-manifest-dry-run.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-migration-manifest-dry-run.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-manifest-dry-run.json"].category, "audit")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-rollback-checkpoint.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-migration-rollback-checkpoint.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-migration-rollback-checkpoint.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-rollback-checkpoint.json"].category, "audit")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-post-apply-validation.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-migration-post-apply-validation.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-migration-post-apply-validation.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-post-apply-validation.json"].category, "audit")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-post-apply-validation-result.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-migration-post-apply-validation-result.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-migration-post-apply-validation-result.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-post-apply-validation-result.json"].category, "audit")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-legacy-fallback-tightening-readiness.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-legacy-fallback-tightening-readiness.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-legacy-fallback-tightening-readiness.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-legacy-fallback-tightening-readiness.json"].category, "audit")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-legacy-fallback-tightening-plan.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-legacy-fallback-tightening-plan.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-legacy-fallback-tightening-plan.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-legacy-fallback-tightening-plan.json"].category, "triage")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-legacy-fallback-tightening-preflight.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-legacy-fallback-tightening-preflight.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-legacy-fallback-tightening-preflight.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-legacy-fallback-tightening-preflight.json"].category, "audit")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-legacy-fallback-tightening-result.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-legacy-fallback-tightening-result.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-legacy-fallback-tightening-result.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-legacy-fallback-tightening-result.json"].category, "audit")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-legacy-fallback-tightening-journal.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-legacy-fallback-tightening-journal.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-legacy-fallback-tightening-journal.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-legacy-fallback-tightening-journal.json"].category, "audit")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-finalization-readiness.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-migration-finalization-readiness.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-migration-finalization-readiness.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-finalization-readiness.json"].category, "audit")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-finalization-plan.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-migration-finalization-plan.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-migration-finalization-plan.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-finalization-plan.json"].category, "triage")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-finalization-preflight.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-migration-finalization-preflight.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-migration-finalization-preflight.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-finalization-preflight.json"].category, "audit")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-finalization-result.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-migration-finalization-result.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-migration-finalization-result.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-finalization-result.json"].category, "audit")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-finalization-journal.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-migration-finalization-journal.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-migration-finalization-journal.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-finalization-journal.json"].category, "audit")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-post-finalization-audit.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-migration-post-finalization-audit.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-migration-post-finalization-audit.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-post-finalization-audit.json"].category, "audit")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-broader-rollout-readiness.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-broader-rollout-readiness.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-broader-rollout-readiness.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-broader-rollout-readiness.json"].category, "audit")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-broader-rollout-plan.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-broader-rollout-plan.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-broader-rollout-plan.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-broader-rollout-plan.json"].category, "triage")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-broader-rollout-preflight.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-broader-rollout-preflight.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-broader-rollout-preflight.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-broader-rollout-preflight.json"].category, "audit")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-broader-rollout-result.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-broader-rollout-result.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-broader-rollout-result.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-broader-rollout-result.json"].category, "audit")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-broader-rollout-journal.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-broader-rollout-journal.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-broader-rollout-journal.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-broader-rollout-journal.json"].category, "audit")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-broader-rollout-post-audit.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-broader-rollout-post-audit.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-broader-rollout-post-audit.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-broader-rollout-post-audit.json"].category, "audit")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-broader-rollout-rollback-decision-plan.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-broader-rollout-rollback-decision-plan.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-broader-rollout-rollback-decision-plan.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-broader-rollout-rollback-decision-plan.json"].category, "triage")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-broader-rollout-decision-record.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-broader-rollout-decision-record.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-broader-rollout-decision-record.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-broader-rollout-decision-record.json"].category, "audit")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-broader-rollout-commit-result.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-broader-rollout-commit-result.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-broader-rollout-commit-result.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-broader-rollout-commit-result.json"].category, "audit")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-broader-rollout-commit-journal.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-broader-rollout-commit-journal.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-broader-rollout-commit-journal.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-broader-rollout-commit-journal.json"].category, "audit")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-broader-rollout-rollback-preflight.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-broader-rollout-rollback-preflight.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-broader-rollout-rollback-preflight.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-broader-rollout-rollback-preflight.json"].category, "audit")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-broader-rollout-rollback-result.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-broader-rollout-rollback-result.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-broader-rollout-rollback-result.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-broader-rollout-rollback-result.json"].category, "audit")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-broader-rollout-rollback-journal.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-broader-rollout-rollback-journal.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-broader-rollout-rollback-journal.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-broader-rollout-rollback-journal.json"].category, "audit")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-physical-apply-preflight.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-migration-physical-apply-preflight.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-migration-physical-apply-preflight.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-physical-apply-preflight.json"].category, "audit")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-physical-apply-result.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-migration-physical-apply-result.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-migration-physical-apply-result.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-physical-apply-result.json"].category, "audit")
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-physical-apply-journal.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(
+            routes["workspace/workspace-foldered-canonical-migration-physical-apply-journal.json"].future_path,
+            "/workspace/review/workspace-foldered-canonical-migration-physical-apply-journal.json",
+        )
+        self.assertEqual(routes["workspace/workspace-foldered-canonical-migration-physical-apply-journal.json"].category, "audit")
+        self.assertEqual(routes["workspace/paused-session-live-continuation-preflight.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-live-continuation-preflight.json"].future_path,
+            "/workspace/debugger/paused-session-live-continuation-preflight.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-live-continuation-preflight.json"].category, "audit")
+        self.assertEqual(routes["workspace/paused-session-target-attach-readiness.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-target-attach-readiness.json"].future_path,
+            "/workspace/debugger/paused-session-target-attach-readiness.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-target-attach-readiness.json"].category, "audit")
+        self.assertEqual(routes["workspace/paused-session-cross-process-execution-plan.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-cross-process-execution-plan.json"].future_path,
+            "/workspace/debugger/paused-session-cross-process-execution-plan.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-cross-process-execution-plan.json"].category, "triage")
+        self.assertEqual(routes["workspace/paused-session-cross-process-session-lifecycle.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-cross-process-session-lifecycle.json"].future_path,
+            "/workspace/debugger/paused-session-cross-process-session-lifecycle.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-cross-process-session-lifecycle.json"].category, "triage")
+        self.assertEqual(routes["workspace/paused-session-cross-process-attach-probe.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-cross-process-attach-probe.json"].future_path,
+            "/workspace/debugger/paused-session-cross-process-attach-probe.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-cross-process-attach-probe.json"].category, "audit")
+        self.assertEqual(routes["workspace/paused-session-live-callframe-recovery.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-live-callframe-recovery.json"].future_path,
+            "/workspace/debugger/paused-session-live-callframe-recovery.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-live-callframe-recovery.json"].category, "audit")
+        self.assertEqual(routes["workspace/paused-session-cross-process-one-action-execution.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-cross-process-one-action-execution.json"].future_path,
+            "/workspace/debugger/paused-session-cross-process-one-action-execution.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-cross-process-one-action-execution.json"].category, "audit")
+        self.assertEqual(routes["workspace/paused-session-next-paused-event-capture-plan.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-next-paused-event-capture-plan.json"].future_path,
+            "/workspace/debugger/paused-session-next-paused-event-capture-plan.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-next-paused-event-capture-plan.json"].category, "triage")
+        self.assertEqual(routes["workspace/paused-session-next-paused-event-capture-execution.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-next-paused-event-capture-execution.json"].future_path,
+            "/workspace/debugger/paused-session-next-paused-event-capture-execution.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-next-paused-event-capture-execution.json"].category, "audit")
+        self.assertEqual(routes["workspace/paused-session-pre-action-subscribe-and-action.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-pre-action-subscribe-and-action.json"].future_path,
+            "/workspace/debugger/paused-session-pre-action-subscribe-and-action.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-pre-action-subscribe-and-action.json"].category, "audit")
+        self.assertEqual(routes["workspace/paused-session-cross-process-continuation-checkpoint.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-cross-process-continuation-checkpoint.json"].future_path,
+            "/workspace/debugger/paused-session-cross-process-continuation-checkpoint.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-cross-process-continuation-checkpoint.json"].category, "audit")
+        self.assertEqual(routes["workspace/paused-session-multi-step-continuation-workflow.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-multi-step-continuation-workflow.json"].future_path,
+            "/workspace/debugger/paused-session-multi-step-continuation-workflow.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-multi-step-continuation-workflow.json"].category, "triage")
+        self.assertEqual(routes["workspace/paused-session-multi-step-continuation-execution.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-multi-step-continuation-execution.json"].future_path,
+            "/workspace/debugger/paused-session-multi-step-continuation-execution.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-multi-step-continuation-execution.json"].category, "audit")
+        self.assertEqual(routes["workspace/paused-session-multi-step-loop-plan.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-multi-step-loop-plan.json"].future_path,
+            "/workspace/debugger/paused-session-multi-step-loop-plan.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-multi-step-loop-plan.json"].category, "triage")
+        self.assertEqual(routes["workspace/paused-session-multi-step-loop-execution.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-multi-step-loop-execution.json"].future_path,
+            "/workspace/debugger/paused-session-multi-step-loop-execution.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-multi-step-loop-execution.json"].category, "audit")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-readiness.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-automatic-loop-readiness.json"].future_path,
+            "/workspace/debugger/paused-session-automatic-loop-readiness.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-readiness.json"].category, "triage")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-execution-plan.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-automatic-loop-execution-plan.json"].future_path,
+            "/workspace/debugger/paused-session-automatic-loop-execution-plan.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-execution-plan.json"].category, "triage")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-executor-preflight.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-automatic-loop-executor-preflight.json"].future_path,
+            "/workspace/debugger/paused-session-automatic-loop-executor-preflight.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-executor-preflight.json"].category, "triage")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-executor-approval-plan.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-automatic-loop-executor-approval-plan.json"].future_path,
+            "/workspace/debugger/paused-session-automatic-loop-executor-approval-plan.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-executor-approval-plan.json"].category, "triage")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-executor-approval-record.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-automatic-loop-executor-approval-record.json"].future_path,
+            "/workspace/debugger/paused-session-automatic-loop-executor-approval-record.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-executor-approval-record.json"].category, "audit")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-transaction-preflight.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-automatic-loop-transaction-preflight.json"].future_path,
+            "/workspace/debugger/paused-session-automatic-loop-transaction-preflight.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-transaction-preflight.json"].category, "audit")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-executor-journal.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-automatic-loop-executor-journal.json"].future_path,
+            "/workspace/debugger/paused-session-automatic-loop-executor-journal.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-executor-journal.json"].category, "audit")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-bounded-executor-gate.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-automatic-loop-bounded-executor-gate.json"].future_path,
+            "/workspace/debugger/paused-session-automatic-loop-bounded-executor-gate.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-bounded-executor-gate.json"].category, "audit")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-execution-result.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-automatic-loop-execution-result.json"].future_path,
+            "/workspace/debugger/paused-session-automatic-loop-execution-result.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-execution-result.json"].category, "audit")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-followup-checkpoint.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-automatic-loop-followup-checkpoint.json"].future_path,
+            "/workspace/debugger/paused-session-automatic-loop-followup-checkpoint.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-followup-checkpoint.json"].category, "audit")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-next-iteration-plan.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-automatic-loop-next-iteration-plan.json"].future_path,
+            "/workspace/debugger/paused-session-automatic-loop-next-iteration-plan.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-next-iteration-plan.json"].category, "triage")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-next-iteration-execution.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-automatic-loop-next-iteration-execution.json"].future_path,
+            "/workspace/debugger/paused-session-automatic-loop-next-iteration-execution.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-next-iteration-execution.json"].category, "audit")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-next-iteration-followup-checkpoint.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-automatic-loop-next-iteration-followup-checkpoint.json"].future_path,
+            "/workspace/debugger/paused-session-automatic-loop-next-iteration-followup-checkpoint.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-next-iteration-followup-checkpoint.json"].category, "audit")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-following-iteration-plan.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-automatic-loop-following-iteration-plan.json"].future_path,
+            "/workspace/debugger/paused-session-automatic-loop-following-iteration-plan.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-following-iteration-plan.json"].category, "triage")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-multi-iteration-policy.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-automatic-loop-multi-iteration-policy.json"].future_path,
+            "/workspace/debugger/paused-session-automatic-loop-multi-iteration-policy.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-multi-iteration-policy.json"].category, "triage")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-multi-iteration-executor-preflight.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-automatic-loop-multi-iteration-executor-preflight.json"].future_path,
+            "/workspace/debugger/paused-session-automatic-loop-multi-iteration-executor-preflight.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-multi-iteration-executor-preflight.json"].category, "triage")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-multi-iteration-execution-plan.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-automatic-loop-multi-iteration-execution-plan.json"].future_path,
+            "/workspace/debugger/paused-session-automatic-loop-multi-iteration-execution-plan.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-multi-iteration-execution-plan.json"].category, "triage")
+        self.assertEqual(routes["workspace/recursive-continuation-readiness.json"].virtual_folder, "/workspace/runtime/")
+        self.assertEqual(
+            routes["workspace/recursive-continuation-readiness.json"].future_path,
+            "/workspace/runtime/recursive-continuation-readiness.json",
+        )
+        self.assertEqual(routes["workspace/recursive-continuation-readiness.json"].category, "audit")
+        self.assertEqual(routes["workspace/closure-functions.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/closure-functions.json"].future_path, "/workspace/debugger/closure-functions.json")
+        self.assertEqual(routes["workspace/closure-functions.json"].category, "trace")
+        self.assertEqual(routes["workspace/closure-function-candidates.json"].virtual_folder, "/workspace/hooks/")
+        self.assertEqual(routes["workspace/closure-function-candidates.json"].future_path, "/workspace/hooks/closure-function-candidates.json")
+        self.assertEqual(routes["workspace/closure-function-candidates.json"].category, "triage")
+        self.assertEqual(routes["workspace/closure-wrapper-replacement-plan.json"].virtual_folder, "/workspace/hooks/")
+        self.assertEqual(routes["workspace/closure-wrapper-replacement-plan.json"].future_path, "/workspace/hooks/closure-wrapper-replacement-plan.json")
+        self.assertEqual(routes["workspace/closure-wrapper-replacement-plan.json"].category, "triage")
+        self.assertEqual(routes["workspace/closure-wrapper-assignment-safety.json"].virtual_folder, "/workspace/hooks/")
+        self.assertEqual(routes["workspace/closure-wrapper-assignment-safety.json"].future_path, "/workspace/hooks/closure-wrapper-assignment-safety.json")
+        self.assertEqual(routes["workspace/closure-wrapper-assignment-safety.json"].category, "triage")
+        self.assertEqual(routes["workspace/closure-wrapper-runtime-mutability-preflight.json"].virtual_folder, "/workspace/hooks/")
+        self.assertEqual(routes["workspace/closure-wrapper-runtime-mutability-preflight.json"].future_path, "/workspace/hooks/closure-wrapper-runtime-mutability-preflight.json")
+        self.assertEqual(routes["workspace/closure-wrapper-runtime-mutability-preflight.json"].category, "triage")
+        self.assertEqual(routes["workspace/closure-wrapper-runtime-mutability-result.json"].virtual_folder, "/workspace/hooks/")
+        self.assertEqual(routes["workspace/closure-wrapper-runtime-mutability-result.json"].future_path, "/workspace/hooks/closure-wrapper-runtime-mutability-result.json")
+        self.assertEqual(routes["workspace/closure-wrapper-runtime-mutability-result.json"].category, "audit")
+        self.assertEqual(routes["workspace/closure-wrapper-replacement-execution.json"].virtual_folder, "/workspace/hooks/")
+        self.assertEqual(routes["workspace/closure-wrapper-replacement-execution.json"].future_path, "/workspace/hooks/closure-wrapper-replacement-execution.json")
+        self.assertEqual(routes["workspace/closure-wrapper-replacement-execution.json"].category, "audit")
+        self.assertEqual(routes["workspace/closure-wrapper-restore-plan.json"].virtual_folder, "/workspace/hooks/")
+        self.assertEqual(routes["workspace/closure-wrapper-restore-plan.json"].future_path, "/workspace/hooks/closure-wrapper-restore-plan.json")
+        self.assertEqual(routes["workspace/closure-wrapper-restore-plan.json"].category, "audit")
+        self.assertEqual(routes["workspace/closure-wrapper-restore-execution.json"].virtual_folder, "/workspace/hooks/")
+        self.assertEqual(routes["workspace/closure-wrapper-restore-execution.json"].future_path, "/workspace/hooks/closure-wrapper-restore-execution.json")
+        self.assertEqual(routes["workspace/closure-wrapper-restore-execution.json"].category, "audit")
+        self.assertEqual(routes["workspace/closure-wrapper-events.json"].virtual_folder, "/workspace/hooks/")
+        self.assertEqual(routes["workspace/closure-wrapper-events.json"].future_path, "/workspace/hooks/closure-wrapper-events.json")
+        self.assertEqual(routes["workspace/closure-wrapper-events.json"].category, "hook-timeline")
+        self.assertEqual(routes["workspace/closure-wrapper-continuation-readiness.json"].virtual_folder, "/workspace/hooks/")
+        self.assertEqual(routes["workspace/closure-wrapper-continuation-readiness.json"].future_path, "/workspace/hooks/closure-wrapper-continuation-readiness.json")
+        self.assertEqual(routes["workspace/closure-wrapper-continuation-readiness.json"].category, "triage")
+        self.assertEqual(routes["workspace/closure-wrapper-continuation-execution-plan.json"].virtual_folder, "/workspace/hooks/")
+        self.assertEqual(
+            routes["workspace/closure-wrapper-continuation-execution-plan.json"].future_path,
+            "/workspace/hooks/closure-wrapper-continuation-execution-plan.json",
+        )
+        self.assertEqual(routes["workspace/closure-wrapper-continuation-execution-plan.json"].category, "triage")
+        self.assertEqual(routes["workspace/closure-wrapper-continuation-execution.json"].virtual_folder, "/workspace/hooks/")
+        self.assertEqual(
+            routes["workspace/closure-wrapper-continuation-execution.json"].future_path,
+            "/workspace/hooks/closure-wrapper-continuation-execution.json",
+        )
+        self.assertEqual(routes["workspace/closure-wrapper-continuation-execution.json"].category, "audit")
+        self.assertEqual(routes["workspace/closure-wrapper-continuation-checkpoint.json"].virtual_folder, "/workspace/hooks/")
+        self.assertEqual(
+            routes["workspace/closure-wrapper-continuation-checkpoint.json"].future_path,
+            "/workspace/hooks/closure-wrapper-continuation-checkpoint.json",
+        )
+        self.assertEqual(routes["workspace/closure-wrapper-continuation-checkpoint.json"].category, "triage")
+        self.assertEqual(routes["workspace/closure-wrapper-continuation-next-iteration-plan.json"].virtual_folder, "/workspace/hooks/")
+        self.assertEqual(
+            routes["workspace/closure-wrapper-continuation-next-iteration-plan.json"].future_path,
+            "/workspace/hooks/closure-wrapper-continuation-next-iteration-plan.json",
+        )
+        self.assertEqual(routes["workspace/closure-wrapper-continuation-next-iteration-plan.json"].category, "triage")
+        self.assertEqual(routes["workspace/closure-wrapper-continuation-next-iteration-execution.json"].virtual_folder, "/workspace/hooks/")
+        self.assertEqual(
+            routes["workspace/closure-wrapper-continuation-next-iteration-execution.json"].future_path,
+            "/workspace/hooks/closure-wrapper-continuation-next-iteration-execution.json",
+        )
+        self.assertEqual(routes["workspace/closure-wrapper-continuation-next-iteration-execution.json"].category, "audit")
         self.assertEqual(routes["workspace/workspace-dual-write-plan.json"].virtual_folder, "/workspace/delivery/")
+        self.assertEqual(routes["workspace/workspace-dual-write-pilot-result.json"].virtual_folder, "/workspace/delivery/")
+        self.assertEqual(routes["workspace/workspace-dual-write-pilot-result.json"].future_path, "/workspace/delivery/workspace-dual-write-pilot-result.json")
+        self.assertEqual(routes["workspace/workspace-dual-write-pilot-result.json"].category, "audit")
         self.assertEqual(routes["workspace/delivery-guard-after-review-gate-replacement.json"].virtual_folder, "/workspace/delivery/")
         self.assertEqual(routes["workspace/final-delivery-package-after-review-gate-replacement.json"].virtual_folder, "/workspace/delivery/")
         self.assertEqual(routes["workspace/final-delivery-transaction-commit.json"].virtual_folder, "/workspace/delivery/")
@@ -97,6 +685,62 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertEqual(routes["workspace/delivery-transaction-journal.json"].virtual_folder, "/workspace/delivery/")
         self.assertEqual(routes["workspace/external-delivery-result.json"].virtual_folder, "/workspace/delivery/")
         self.assertEqual(routes["workspace/external-delivery-duplicate-guard.json"].virtual_folder, "/workspace/delivery/")
+        self.assertEqual(routes["workspace/external-delivery-idempotency-ledger.json"].virtual_folder, "/workspace/delivery/")
+        self.assertEqual(
+            routes["workspace/external-delivery-idempotency-ledger.json"].future_path,
+            "/workspace/delivery/external-delivery-idempotency-ledger.json",
+        )
+        self.assertEqual(routes["workspace/delivery-transaction-lock.json"].virtual_folder, "/workspace/delivery/")
+        self.assertEqual(
+            routes["workspace/delivery-transaction-lock.json"].future_path,
+            "/workspace/delivery/delivery-transaction-lock.json",
+        )
+        self.assertEqual(routes["workspace/delivery-transaction-lock-release.json"].virtual_folder, "/workspace/delivery/")
+        self.assertEqual(
+            routes["workspace/delivery-transaction-lock-release.json"].future_path,
+            "/workspace/delivery/delivery-transaction-lock-release.json",
+        )
+        self.assertEqual(routes["workspace/delivery-distributed-transaction-lock.json"].virtual_folder, "/workspace/delivery/")
+        self.assertEqual(
+            routes["workspace/delivery-distributed-transaction-lock.json"].future_path,
+            "/workspace/delivery/delivery-distributed-transaction-lock.json",
+        )
+        self.assertEqual(routes["workspace/delivery-distributed-transaction-lock-operation.json"].virtual_folder, "/workspace/delivery/")
+        self.assertEqual(
+            routes["workspace/delivery-distributed-transaction-lock-operation.json"].future_path,
+            "/workspace/delivery/delivery-distributed-transaction-lock-operation.json",
+        )
+        self.assertEqual(routes["workspace/delivery-resume-plan.json"].virtual_folder, "/workspace/delivery/")
+        self.assertEqual(
+            routes["workspace/delivery-resume-plan.json"].future_path,
+            "/workspace/delivery/delivery-resume-plan.json",
+        )
+        self.assertEqual(routes["workspace/delivery-resume-execution.json"].virtual_folder, "/workspace/delivery/")
+        self.assertEqual(
+            routes["workspace/delivery-resume-execution.json"].future_path,
+            "/workspace/delivery/delivery-resume-execution.json",
+        )
+        self.assertEqual(routes["workspace/delivery-resume-workflow.json"].virtual_folder, "/workspace/delivery/")
+        self.assertEqual(
+            routes["workspace/delivery-resume-workflow.json"].future_path,
+            "/workspace/delivery/delivery-resume-workflow.json",
+        )
+        self.assertEqual(routes["workspace/delivery-resume-workflow-journal.json"].virtual_folder, "/workspace/delivery/")
+        self.assertEqual(
+            routes["workspace/delivery-resume-workflow-journal.json"].future_path,
+            "/workspace/delivery/delivery-resume-workflow-journal.json",
+        )
+        self.assertEqual(routes["workspace/delivery-transaction-idempotency-guard.json"].virtual_folder, "/workspace/delivery/")
+        self.assertEqual(
+            routes["workspace/delivery-transaction-idempotency-guard.json"].future_path,
+            "/workspace/delivery/delivery-transaction-idempotency-guard.json",
+        )
+        self.assertEqual(routes["workspace/delivery-rollback-state.json"].virtual_folder, "/workspace/delivery/")
+        self.assertEqual(routes["workspace/delivery-rollback-state.json"].future_path, "/workspace/delivery/delivery-rollback-state.json")
+        self.assertEqual(routes["workspace/delivery-rollback-execution.json"].virtual_folder, "/workspace/delivery/")
+        self.assertEqual(routes["workspace/delivery-rollback-execution.json"].future_path, "/workspace/delivery/delivery-rollback-execution.json")
+        self.assertEqual(routes["workspace/delivery-transition-execution.json"].virtual_folder, "/workspace/delivery/")
+        self.assertEqual(routes["workspace/delivery-transition-execution.json"].future_path, "/workspace/delivery/delivery-transition-execution.json")
         self.assertEqual(routes["workspace/delivery-manifest-revision.json"].virtual_folder, "/workspace/delivery/")
         self.assertEqual(routes["workspace/backend-artifact-manifest-mutation.json"].virtual_folder, "/workspace/delivery/")
         self.assertEqual(routes["workspace/backend-artifact-manifest.patched.json"].virtual_folder, "/workspace/delivery/")
@@ -109,6 +753,237 @@ class WorkspaceContractTests(unittest.TestCase):
         self.assertEqual(routes["workspace/review-gate.json"].virtual_folder, "/workspace/review/")
         self.assertEqual(routes["workspace/rebuild-plan.json"].virtual_folder, "/workspace/rebuild/")
         self.assertEqual(routes["workspace/browser-provider-smoke.json"].virtual_folder, "/workspace/browser/")
+        self.assertEqual(routes["workspace/async-chunk-load-plan.json"].virtual_folder, "/workspace/runtime/")
+        self.assertEqual(routes["workspace/async-chunk-load-plan.json"].future_path, "/workspace/runtime/async-chunk-load-plan.json")
+        self.assertEqual(routes["workspace/async-chunk-module-diff.json"].virtual_folder, "/workspace/hooks/")
+        self.assertEqual(routes["workspace/async-chunk-module-diff.json"].future_path, "/workspace/hooks/async-chunk-module-diff.json")
+        self.assertEqual(routes["workspace/custom-loader-traversal-plan.json"].virtual_folder, "/workspace/runtime/")
+        self.assertEqual(routes["workspace/custom-loader-traversal-plan.json"].future_path, "/workspace/runtime/custom-loader-traversal-plan.json")
+        self.assertEqual(routes["workspace/custom-loader-traversal-workflow-plan.json"].virtual_folder, "/workspace/runtime/")
+        self.assertEqual(routes["workspace/custom-loader-traversal-workflow-plan.json"].future_path, "/workspace/runtime/custom-loader-traversal-workflow-plan.json")
+        self.assertEqual(routes["workspace/custom-loader-traversal-workflow-execution.json"].virtual_folder, "/workspace/runtime/")
+        self.assertEqual(routes["workspace/custom-loader-traversal-workflow-execution.json"].future_path, "/workspace/runtime/custom-loader-traversal-workflow-execution.json")
+        self.assertEqual(routes["workspace/custom-loader-traversal-loop-plan.json"].virtual_folder, "/workspace/runtime/")
+        self.assertEqual(routes["workspace/custom-loader-traversal-loop-plan.json"].future_path, "/workspace/runtime/custom-loader-traversal-loop-plan.json")
+        self.assertEqual(routes["workspace/custom-loader-continuation-workflow.json"].virtual_folder, "/workspace/runtime/")
+        self.assertEqual(routes["workspace/custom-loader-continuation-workflow.json"].future_path, "/workspace/runtime/custom-loader-continuation-workflow.json")
+        self.assertEqual(routes["workspace/custom-loader-continuation-journal.json"].virtual_folder, "/workspace/runtime/")
+        self.assertEqual(routes["workspace/custom-loader-continuation-journal.json"].future_path, "/workspace/runtime/custom-loader-continuation-journal.json")
+        self.assertEqual(routes["workspace/custom-loader-continuation-execution.json"].virtual_folder, "/workspace/runtime/")
+        self.assertEqual(routes["workspace/custom-loader-continuation-execution.json"].future_path, "/workspace/runtime/custom-loader-continuation-execution.json")
+        self.assertEqual(routes["workspace/custom-loader-execution-preflight.json"].virtual_folder, "/workspace/runtime/")
+        self.assertEqual(routes["workspace/custom-loader-execution-preflight.json"].future_path, "/workspace/runtime/custom-loader-execution-preflight.json")
+        self.assertEqual(routes["workspace/custom-loader-execution-result.json"].virtual_folder, "/workspace/runtime/")
+        self.assertEqual(routes["workspace/custom-loader-execution-result.json"].future_path, "/workspace/runtime/custom-loader-execution-result.json")
+        self.assertEqual(routes["workspace/custom-loader-module-diff.json"].virtual_folder, "/workspace/hooks/")
+        self.assertEqual(routes["workspace/custom-loader-module-diff.json"].future_path, "/workspace/hooks/custom-loader-module-diff.json")
+        self.assertEqual(routes["workspace/module-federation-get-init-plan.json"].virtual_folder, "/workspace/runtime/")
+        self.assertEqual(routes["workspace/module-federation-get-init-plan.json"].future_path, "/workspace/runtime/module-federation-get-init-plan.json")
+        self.assertEqual(routes["workspace/async-chunk-traversal-graph.json"].virtual_folder, "/workspace/runtime/")
+        self.assertEqual(routes["workspace/async-chunk-traversal-graph.json"].future_path, "/workspace/runtime/async-chunk-traversal-graph.json")
+        self.assertEqual(routes["workspace/async-chunk-traversal-workflow-plan.json"].virtual_folder, "/workspace/runtime/")
+        self.assertEqual(routes["workspace/async-chunk-traversal-workflow-plan.json"].future_path, "/workspace/runtime/async-chunk-traversal-workflow-plan.json")
+        self.assertEqual(routes["workspace/async-chunk-traversal-workflow-execution.json"].virtual_folder, "/workspace/runtime/")
+        self.assertEqual(routes["workspace/async-chunk-traversal-workflow-execution.json"].future_path, "/workspace/runtime/async-chunk-traversal-workflow-execution.json")
+        self.assertEqual(routes["workspace/async-chunk-traversal-loop-plan.json"].virtual_folder, "/workspace/runtime/")
+        self.assertEqual(routes["workspace/async-chunk-traversal-loop-plan.json"].future_path, "/workspace/runtime/async-chunk-traversal-loop-plan.json")
+        self.assertEqual(routes["workspace/async-chunk-traversal-loop-execution.json"].virtual_folder, "/workspace/runtime/")
+        self.assertEqual(routes["workspace/async-chunk-traversal-loop-execution.json"].future_path, "/workspace/runtime/async-chunk-traversal-loop-execution.json")
+        self.assertEqual(routes["workspace/custom-loader-traversal-loop-execution.json"].virtual_folder, "/workspace/runtime/")
+        self.assertEqual(routes["workspace/custom-loader-traversal-loop-execution.json"].future_path, "/workspace/runtime/custom-loader-traversal-loop-execution.json")
+        self.assertEqual(routes["workspace/custom-loader-recursive-traversal-plan.json"].virtual_folder, "/workspace/runtime/")
+        self.assertEqual(routes["workspace/custom-loader-recursive-traversal-plan.json"].future_path, "/workspace/runtime/custom-loader-recursive-traversal-plan.json")
+        self.assertEqual(routes["workspace/custom-loader-recursive-traversal-followup.json"].virtual_folder, "/workspace/runtime/")
+        self.assertEqual(routes["workspace/custom-loader-recursive-traversal-followup.json"].future_path, "/workspace/runtime/custom-loader-recursive-traversal-followup.json")
+        self.assertEqual(routes["workspace/custom-loader-recursive-traversal-execution.json"].virtual_folder, "/workspace/runtime/")
+        self.assertEqual(routes["workspace/custom-loader-recursive-traversal-execution.json"].future_path, "/workspace/runtime/custom-loader-recursive-traversal-execution.json")
+        self.assertEqual(routes["workspace/async-chunk-recursive-traversal-plan.json"].virtual_folder, "/workspace/runtime/")
+        self.assertEqual(routes["workspace/async-chunk-recursive-traversal-plan.json"].future_path, "/workspace/runtime/async-chunk-recursive-traversal-plan.json")
+        self.assertEqual(routes["workspace/async-chunk-recursive-traversal-followup.json"].virtual_folder, "/workspace/runtime/")
+        self.assertEqual(routes["workspace/async-chunk-recursive-traversal-followup.json"].future_path, "/workspace/runtime/async-chunk-recursive-traversal-followup.json")
+        self.assertEqual(routes["workspace/async-chunk-recursive-traversal-execution.json"].virtual_folder, "/workspace/runtime/")
+        self.assertEqual(routes["workspace/async-chunk-recursive-traversal-execution.json"].future_path, "/workspace/runtime/async-chunk-recursive-traversal-execution.json")
+        self.assertEqual(routes["workspace/async-chunk-load-result.json"].virtual_folder, "/workspace/runtime/")
+        self.assertEqual(routes["workspace/async-chunk-load-result.json"].future_path, "/workspace/runtime/async-chunk-load-result.json")
+        self.assertEqual(routes["workspace/module-federation-get-init-result.json"].virtual_folder, "/workspace/runtime/")
+        self.assertEqual(routes["workspace/module-federation-get-init-result.json"].future_path, "/workspace/runtime/module-federation-get-init-result.json")
+        self.assertEqual(routes["workspace/module-federation-factory-invoke-result.json"].virtual_folder, "/workspace/runtime/")
+        self.assertEqual(routes["workspace/module-federation-factory-invoke-result.json"].future_path, "/workspace/runtime/module-federation-factory-invoke-result.json")
+        self.assertEqual(routes["workspace/module-federation-export-hook-plan.json"].virtual_folder, "/workspace/hooks/")
+        self.assertEqual(routes["workspace/module-federation-export-hook-plan.json"].future_path, "/workspace/hooks/module-federation-export-hook-plan.json")
+        self.assertEqual(routes["workspace/module-federation-traversal-graph.json"].virtual_folder, "/workspace/runtime/")
+        self.assertEqual(routes["workspace/module-federation-traversal-graph.json"].future_path, "/workspace/runtime/module-federation-traversal-graph.json")
+        self.assertEqual(routes["workspace/module-federation-traversal-workflow-plan.json"].virtual_folder, "/workspace/runtime/")
+        self.assertEqual(routes["workspace/module-federation-traversal-workflow-plan.json"].future_path, "/workspace/runtime/module-federation-traversal-workflow-plan.json")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-multi-iteration-executor-approval-plan.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-multi-iteration-executor-approval-plan.json"].future_path, "/workspace/debugger/paused-session-automatic-loop-multi-iteration-executor-approval-plan.json")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-multi-iteration-executor-approval-plan.json"].category, "triage")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-multi-iteration-executor-approval-record.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-multi-iteration-executor-approval-record.json"].future_path, "/workspace/debugger/paused-session-automatic-loop-multi-iteration-executor-approval-record.json")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-multi-iteration-executor-approval-record.json"].category, "audit")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-multi-iteration-transaction-preflight.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-multi-iteration-transaction-preflight.json"].future_path, "/workspace/debugger/paused-session-automatic-loop-multi-iteration-transaction-preflight.json")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-multi-iteration-transaction-preflight.json"].category, "audit")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-multi-iteration-executor-journal.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-multi-iteration-executor-journal.json"].future_path, "/workspace/debugger/paused-session-automatic-loop-multi-iteration-executor-journal.json")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-multi-iteration-executor-journal.json"].category, "audit")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-multi-iteration-bounded-executor-gate.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-multi-iteration-bounded-executor-gate.json"].future_path, "/workspace/debugger/paused-session-automatic-loop-multi-iteration-bounded-executor-gate.json")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-multi-iteration-bounded-executor-gate.json"].category, "audit")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-multi-iteration-execution-result.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-multi-iteration-execution-result.json"].future_path, "/workspace/debugger/paused-session-automatic-loop-multi-iteration-execution-result.json")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-multi-iteration-execution-result.json"].category, "audit")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-multi-iteration-followup-checkpoint.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-multi-iteration-followup-checkpoint.json"].future_path, "/workspace/debugger/paused-session-automatic-loop-multi-iteration-followup-checkpoint.json")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-multi-iteration-followup-checkpoint.json"].category, "audit")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-multi-iteration-next-step-plan.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-multi-iteration-next-step-plan.json"].future_path, "/workspace/debugger/paused-session-automatic-loop-multi-iteration-next-step-plan.json")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-multi-iteration-next-step-plan.json"].category, "triage")
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-multi-iteration-executor-input-preflight.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(
+            routes["workspace/paused-session-automatic-loop-multi-iteration-executor-input-preflight.json"].future_path,
+            "/workspace/debugger/paused-session-automatic-loop-multi-iteration-executor-input-preflight.json",
+        )
+        self.assertEqual(routes["workspace/paused-session-automatic-loop-multi-iteration-executor-input-preflight.json"].category, "triage")
+        self.assertEqual(routes["workspace/source-map-fetch-plan.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/source-map-fetch-plan.json"].future_path, "/workspace/debugger/source-map-fetch-plan.json")
+        self.assertEqual(routes["workspace/source-map-fetch-result.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/source-map-fetch-result.json"].future_path, "/workspace/debugger/source-map-fetch-result.json")
+        self.assertEqual(routes["workspace/source-map-lookup.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/source-map-lookup.json"].future_path, "/workspace/debugger/source-map-lookup.json")
+        self.assertEqual(routes["workspace/source-map-lookup.json"].category, "triage")
+        self.assertEqual(routes["workspace/source-map-source-content.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/source-map-source-content.json"].future_path, "/workspace/debugger/source-map-source-content.json")
+        self.assertEqual(routes["workspace/source-map-source-content.json"].category, "triage")
+        self.assertEqual(routes["workspace/source-map-readiness.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/source-map-readiness.json"].future_path, "/workspace/debugger/source-map-readiness.json")
+        self.assertEqual(routes["workspace/source-map-readiness.json"].category, "triage")
+        self.assertEqual(routes["workspace/source-map-consumer-action-plan.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/source-map-consumer-action-plan.json"].future_path, "/workspace/debugger/source-map-consumer-action-plan.json")
+        self.assertEqual(routes["workspace/source-map-consumer-action-plan.json"].category, "triage")
+        self.assertEqual(routes["workspace/source-map-consumer-materialization.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/source-map-consumer-materialization.json"].future_path, "/workspace/debugger/source-map-consumer-materialization.json")
+        self.assertEqual(routes["workspace/source-map-consumer-materialization.json"].category, "triage")
+        self.assertEqual(routes["workspace/source-map-typed-payload-preflight.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/source-map-typed-payload-preflight.json"].future_path, "/workspace/debugger/source-map-typed-payload-preflight.json")
+        self.assertEqual(routes["workspace/source-map-typed-payload-preflight.json"].category, "triage")
+        self.assertEqual(routes["workspace/source-map-followthrough-review.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/source-map-followthrough-review.json"].future_path, "/workspace/debugger/source-map-followthrough-review.json")
+        self.assertEqual(routes["workspace/source-map-followthrough-review.json"].category, "triage")
+        self.assertEqual(routes["workspace/source-map-followthrough-chain-readiness.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/source-map-followthrough-chain-readiness.json"].future_path, "/workspace/debugger/source-map-followthrough-chain-readiness.json")
+        self.assertEqual(routes["workspace/source-map-followthrough-chain-readiness.json"].category, "triage")
+        self.assertEqual(routes["workspace/source-map-followthrough-one-step-plan.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/source-map-followthrough-one-step-plan.json"].future_path, "/workspace/debugger/source-map-followthrough-one-step-plan.json")
+        self.assertEqual(routes["workspace/source-map-followthrough-one-step-plan.json"].category, "triage")
+        self.assertEqual(routes["workspace/source-map-followthrough-dispatch-preflight.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/source-map-followthrough-dispatch-preflight.json"].future_path, "/workspace/debugger/source-map-followthrough-dispatch-preflight.json")
+        self.assertEqual(routes["workspace/source-map-followthrough-dispatch-preflight.json"].category, "triage")
+        self.assertEqual(routes["workspace/source-map-followthrough-dispatch-approval-plan.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/source-map-followthrough-dispatch-approval-plan.json"].future_path, "/workspace/debugger/source-map-followthrough-dispatch-approval-plan.json")
+        self.assertEqual(routes["workspace/source-map-followthrough-dispatch-approval-plan.json"].category, "triage")
+        self.assertEqual(routes["workspace/source-map-followthrough-dispatch-approval-record.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/source-map-followthrough-dispatch-approval-record.json"].future_path, "/workspace/debugger/source-map-followthrough-dispatch-approval-record.json")
+        self.assertEqual(routes["workspace/source-map-followthrough-dispatch-approval-record.json"].category, "audit")
+        self.assertEqual(routes["workspace/source-map-followthrough-dispatch-transaction-preflight.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/source-map-followthrough-dispatch-transaction-preflight.json"].future_path, "/workspace/debugger/source-map-followthrough-dispatch-transaction-preflight.json")
+        self.assertEqual(routes["workspace/source-map-followthrough-dispatch-transaction-preflight.json"].category, "audit")
+        self.assertEqual(routes["workspace/source-map-followthrough-dispatch-transaction-journal.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/source-map-followthrough-dispatch-transaction-journal.json"].future_path, "/workspace/debugger/source-map-followthrough-dispatch-transaction-journal.json")
+        self.assertEqual(routes["workspace/source-map-followthrough-dispatch-transaction-journal.json"].category, "audit")
+        self.assertIn("workspace/source-map-followthrough-dispatch-bounded-executor-gate.json", routes)
+        self.assertEqual(routes["workspace/source-map-followthrough-dispatch-bounded-executor-gate.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/source-map-followthrough-dispatch-bounded-executor-gate.json"].future_path, "/workspace/debugger/source-map-followthrough-dispatch-bounded-executor-gate.json")
+        self.assertEqual(routes["workspace/source-map-followthrough-dispatch-bounded-executor-gate.json"].category, "audit")
+        self.assertIn("workspace/source-map-followthrough-dispatcher-handoff.json", routes)
+        self.assertEqual(routes["workspace/source-map-followthrough-dispatcher-handoff.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/source-map-followthrough-dispatcher-handoff.json"].future_path, "/workspace/debugger/source-map-followthrough-dispatcher-handoff.json")
+        self.assertEqual(routes["workspace/source-map-followthrough-dispatcher-handoff.json"].category, "audit")
+        self.assertIn("workspace/source-map-followthrough-dispatcher-apply-preflight.json", routes)
+        self.assertEqual(routes["workspace/source-map-followthrough-dispatcher-apply-preflight.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/source-map-followthrough-dispatcher-apply-preflight.json"].future_path, "/workspace/debugger/source-map-followthrough-dispatcher-apply-preflight.json")
+        self.assertEqual(routes["workspace/source-map-followthrough-dispatcher-apply-preflight.json"].category, "audit")
+        self.assertIn("workspace/source-map-followthrough-dispatcher-result.json", routes)
+        self.assertEqual(routes["workspace/source-map-followthrough-dispatcher-result.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/source-map-followthrough-dispatcher-result.json"].future_path, "/workspace/debugger/source-map-followthrough-dispatcher-result.json")
+        self.assertEqual(routes["workspace/source-map-followthrough-dispatcher-result.json"].category, "audit")
+        self.assertEqual(routes["workspace/source-map-followthrough-surface-selection.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/source-map-followthrough-surface-selection.json"].future_path, "/workspace/debugger/source-map-followthrough-surface-selection.json")
+        self.assertEqual(routes["workspace/source-map-followthrough-surface-selection.json"].category, "triage")
+        self.assertEqual(routes["workspace/source-map-selected-executor-input-review.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/source-map-selected-executor-input-review.json"].future_path, "/workspace/debugger/source-map-selected-executor-input-review.json")
+        self.assertEqual(routes["workspace/source-map-selected-executor-input-review.json"].category, "triage")
+        self.assertEqual(routes["workspace/source-map-selected-executor-approval-plan.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/source-map-selected-executor-approval-plan.json"].future_path, "/workspace/debugger/source-map-selected-executor-approval-plan.json")
+        self.assertEqual(routes["workspace/source-map-selected-executor-approval-plan.json"].category, "triage")
+        self.assertEqual(routes["workspace/source-map-selected-executor-approval-record.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/source-map-selected-executor-approval-record.json"].future_path, "/workspace/debugger/source-map-selected-executor-approval-record.json")
+        self.assertEqual(routes["workspace/source-map-selected-executor-approval-record.json"].category, "audit")
+        self.assertEqual(routes["workspace/source-map-selected-executor-apply-preflight.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/source-map-selected-executor-apply-preflight.json"].future_path, "/workspace/debugger/source-map-selected-executor-apply-preflight.json")
+        self.assertEqual(routes["workspace/source-map-selected-executor-apply-preflight.json"].category, "audit")
+        self.assertIn("workspace/source-map-selected-executor-application-handoff.json", routes)
+        self.assertEqual(routes["workspace/source-map-selected-executor-application-handoff.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/source-map-selected-executor-application-handoff.json"].future_path, "/workspace/debugger/source-map-selected-executor-application-handoff.json")
+        self.assertEqual(routes["workspace/source-map-selected-executor-application-handoff.json"].category, "audit")
+        self.assertIn("workspace/source-map-selected-executor-result-checkpoint.json", routes)
+        self.assertEqual(routes["workspace/source-map-selected-executor-result-checkpoint.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/source-map-selected-executor-result-checkpoint.json"].future_path, "/workspace/debugger/source-map-selected-executor-result-checkpoint.json")
+        self.assertEqual(routes["workspace/source-map-selected-executor-result-checkpoint.json"].category, "audit")
+        self.assertIn("workspace/source-map-followthrough-completion-checkpoint.json", routes)
+        self.assertEqual(routes["workspace/source-map-followthrough-completion-checkpoint.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/source-map-followthrough-completion-checkpoint.json"].future_path, "/workspace/debugger/source-map-followthrough-completion-checkpoint.json")
+        self.assertEqual(routes["workspace/source-map-followthrough-completion-checkpoint.json"].category, "audit")
+        self.assertIn("workspace/source-map-terminal-review-package.json", routes)
+        self.assertEqual(routes["workspace/source-map-terminal-review-package.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(routes["workspace/source-map-terminal-review-package.json"].future_path, "/workspace/review/source-map-terminal-review-package.json")
+        self.assertEqual(routes["workspace/source-map-terminal-review-package.json"].category, "audit")
+        self.assertIn("workspace/source-map-terminal-review-closure-checkpoint.json", routes)
+        self.assertEqual(routes["workspace/source-map-terminal-review-closure-checkpoint.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(routes["workspace/source-map-terminal-review-closure-checkpoint.json"].future_path, "/workspace/review/source-map-terminal-review-closure-checkpoint.json")
+        self.assertEqual(routes["workspace/source-map-terminal-review-closure-checkpoint.json"].category, "audit")
+        self.assertIn("workspace/source-map-terminal-review-final-audit.json", routes)
+        self.assertEqual(routes["workspace/source-map-terminal-review-final-audit.json"].virtual_folder, "/workspace/review/")
+        self.assertEqual(routes["workspace/source-map-terminal-review-final-audit.json"].future_path, "/workspace/review/source-map-terminal-review-final-audit.json")
+        self.assertEqual(routes["workspace/source-map-terminal-review-final-audit.json"].category, "audit")
+        self.assertEqual(routes["workspace/source-map-source-logpoint-install-result.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/source-map-source-logpoint-install-result.json"].future_path, "/workspace/debugger/source-map-source-logpoint-install-result.json")
+        self.assertEqual(routes["workspace/source-map-source-logpoint-install-result.json"].category, "audit")
+        self.assertEqual(routes["workspace/source-map-debugger-candidates.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/source-map-debugger-candidates.json"].future_path, "/workspace/debugger/source-map-debugger-candidates.json")
+        self.assertEqual(routes["workspace/source-map-debugger-candidates.json"].category, "triage")
+        self.assertEqual(routes["workspace/source-map-debugger-candidate-selection.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/source-map-debugger-candidate-selection.json"].future_path, "/workspace/debugger/source-map-debugger-candidate-selection.json")
+        self.assertEqual(routes["workspace/source-map-debugger-candidate-selection.json"].category, "triage")
+        self.assertEqual(routes["workspace/source-map-debugger-execution-result.json"].virtual_folder, "/workspace/debugger/")
+        self.assertEqual(routes["workspace/source-map-debugger-execution-result.json"].future_path, "/workspace/debugger/source-map-debugger-execution-result.json")
+        self.assertEqual(routes["workspace/source-map-debugger-execution-result.json"].category, "audit")
+        self.assertEqual(routes["workspace/source-map-hook-candidates.json"].virtual_folder, "/workspace/hooks/")
+        self.assertEqual(routes["workspace/source-map-hook-candidates.json"].future_path, "/workspace/hooks/source-map-hook-candidates.json")
+        self.assertEqual(routes["workspace/source-map-hook-candidates.json"].category, "triage")
+        self.assertEqual(routes["workspace/source-map-hook-candidate-selection.json"].virtual_folder, "/workspace/hooks/")
+        self.assertEqual(routes["workspace/source-map-hook-candidate-selection.json"].future_path, "/workspace/hooks/source-map-hook-candidate-selection.json")
+        self.assertEqual(routes["workspace/source-map-hook-candidate-selection.json"].category, "triage")
+        self.assertEqual(routes["workspace/source-map-hook-install-result.json"].virtual_folder, "/workspace/hooks/")
+        self.assertEqual(routes["workspace/source-map-hook-install-result.json"].future_path, "/workspace/hooks/source-map-hook-install-result.json")
+        self.assertEqual(routes["workspace/source-map-hook-install-result.json"].category, "audit")
+        self.assertEqual(routes["workspace/source-map-rebuild-result.json"].virtual_folder, "/workspace/rebuild/")
+        self.assertEqual(routes["workspace/source-map-rebuild-result.json"].future_path, "/workspace/rebuild/source-map-rebuild-result.json")
+        self.assertEqual(routes["workspace/source-map-rebuild-result.json"].category, "audit")
+        self.assertEqual(routes["workspace/source-map-rebuild-generation-result.json"].virtual_folder, "/workspace/rebuild/")
+        self.assertEqual(routes["workspace/source-map-rebuild-generation-result.json"].future_path, "/workspace/rebuild/source-map-rebuild-generation-result.json")
+        self.assertEqual(routes["workspace/source-map-rebuild-generation-result.json"].category, "audit")
+        self.assertEqual(routes["workspace/bundler-symbol-scope.json"].virtual_folder, "/workspace/hooks/")
+        self.assertEqual(routes["workspace/bundler-symbol-scope.json"].future_path, "/workspace/hooks/bundler-symbol-scope.json")
+        self.assertEqual(routes["workspace/bundler-symbol-scope.json"].category, "triage")
+        self.assertEqual(routes["workspace/object-root-mutation-audit.json"].virtual_folder, "/workspace/browser/")
+        self.assertEqual(routes["workspace/object-root-mutation-audit.json"].future_path, "/workspace/browser/object-root-mutation-audit.json")
+        self.assertEqual(routes["workspace/object-graph-diff.json"].virtual_folder, "/workspace/browser/")
+        self.assertEqual(routes["workspace/object-graph-diff.json"].future_path, "/workspace/browser/object-graph-diff.json")
+        self.assertEqual(routes["workspace/object-graph-diff.json"].category, "triage")
+        self.assertEqual(routes["workspace/runtime-object-graph-diff.json"].virtual_folder, "/workspace/browser/")
+        self.assertEqual(routes["workspace/runtime-object-graph-diff.json"].future_path, "/workspace/browser/runtime-object-graph-diff.json")
+        self.assertEqual(routes["workspace/runtime-object-graph-diff.json"].category, "triage")
         self.assertEqual(routes["workspace/workspace-contract.json"].future_path, "/workspace/delivery/workspace-contract.json")
         self.assertTrue(all(item.migration_status == "indexed-only" for item in routes.values()))
 
@@ -172,6 +1047,41 @@ class WorkspaceContractTests(unittest.TestCase):
         missing = resolver.plan_dual_write("missing_artifact")
         self.assertEqual(missing["status"], "unknown-artifact")
         self.assertEqual(missing["write_paths"], ())
+
+    def test_workspace_path_resolver_can_scope_dual_write_to_selected_artifacts(self) -> None:
+        resolver = WorkspacePathResolver(
+            enable_dual_write=True,
+            dual_write_artifact_keys={"workspace_task_card"},
+        )
+
+        in_scope = resolver.resolve_artifact_key("workspace_task_card")
+        out_of_scope = resolver.resolve_artifact_key("workspace_route")
+
+        self.assertIsNotNone(in_scope)
+        self.assertIsNotNone(out_of_scope)
+        assert in_scope is not None
+        assert out_of_scope is not None
+        self.assertTrue(in_scope.dual_write_enabled)
+        self.assertTrue(in_scope.dual_write_scope_enabled)
+        self.assertTrue(in_scope.dual_write_in_scope)
+        self.assertEqual(in_scope.write_paths, ("workspace/task-card.json", "/workspace/recon/task-card.json"))
+        self.assertEqual(in_scope.migration_status, "scoped-dual-write-plan-only")
+        self.assertFalse(out_of_scope.dual_write_enabled)
+        self.assertTrue(out_of_scope.dual_write_scope_enabled)
+        self.assertFalse(out_of_scope.dual_write_in_scope)
+        self.assertEqual(out_of_scope.write_paths, ("workspace/route-decision.json",))
+        self.assertEqual(out_of_scope.migration_status, "dual-write-out-of-scope")
+
+        in_scope_plan = resolver.plan_dual_write("workspace_task_card")
+        out_of_scope_plan = resolver.plan_dual_write("workspace_route")
+        self.assertEqual(in_scope_plan["status"], "planned")
+        self.assertTrue(in_scope_plan["dual_write_enabled"])
+        self.assertTrue(in_scope_plan["dual_write_scope_enabled"])
+        self.assertTrue(in_scope_plan["dual_write_in_scope"])
+        self.assertEqual(out_of_scope_plan["status"], "out-of-scope")
+        self.assertFalse(out_of_scope_plan["dual_write_enabled"])
+        self.assertTrue(out_of_scope_plan["dual_write_scope_enabled"])
+        self.assertFalse(out_of_scope_plan["dual_write_in_scope"])
 
     def test_web_pipeline_writes_workspace_contract_and_manifest_entry(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -252,6 +1162,49 @@ class WorkspaceContractTests(unittest.TestCase):
             self.assertIn("workspace_dual_write_plan", manifest_by_key)
             alias = manifest_by_key["workspace_dual_write_plan"]["metadata"]["workspace_alias"]
             self.assertEqual(alias["future_path"], "/workspace/delivery/workspace-dual-write-plan.json")
+
+    def test_web_pipeline_can_scope_workspace_dual_write_to_selected_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir) / "artifacts"
+            output = run_reverse_pipeline(
+                task_text="https://example.com/search 找 sign 入口，并给出下一步建议",
+                artifact_root=root,
+                runtime_kind="mock",
+                enable_workspace_dual_write=True,
+                workspace_dual_write_artifact_keys={"workspace_task_card"},
+            )
+
+            legacy_task = root / "workspace" / "task-card.json"
+            future_task = root / "workspace" / "recon" / "task-card.json"
+            legacy_route = root / "workspace" / "route-decision.json"
+            future_route = root / "workspace" / "recon" / "route-decision.json"
+            future_manifest = root / "workspace" / "delivery" / "backend-artifact-manifest.json"
+            dual_write_plan_path = root / "workspace" / "workspace-dual-write-plan.json"
+
+            self.assertEqual(output.artifacts["workspace_task_card"], str(legacy_task))
+            self.assertTrue(legacy_task.exists())
+            self.assertTrue(future_task.exists())
+            self.assertTrue(legacy_route.exists())
+            self.assertFalse(future_route.exists())
+            self.assertFalse(future_manifest.exists())
+            self.assertTrue(dual_write_plan_path.exists())
+
+            plan = json.loads(dual_write_plan_path.read_text(encoding="utf-8"))
+            self.assertEqual(plan["status"], "applied")
+            self.assertEqual(plan["mode"], "scoped-opt-in-dual-write")
+            self.assertTrue(plan["dual_write_scope_enabled"])
+            self.assertEqual(plan["dual_write_scope_artifact_keys"], ["workspace_task_card"])
+            self.assertEqual(plan["dual_written_count"], 1)
+            self.assertGreater(plan["out_of_scope_record_count"], 1)
+            records = {record["artifact_key"]: record for record in plan["records"]}
+            self.assertEqual(records["workspace_task_card"]["write_paths"], [str(legacy_task), str(future_task)])
+            self.assertTrue(records["workspace_task_card"]["dual_write_enabled"])
+            self.assertTrue(records["workspace_task_card"]["dual_write_in_scope"])
+            self.assertEqual(records["workspace_task_card"]["migration_status"], "scoped-dual-write-plan-only")
+            self.assertEqual(records["workspace_route"]["write_paths"], [str(legacy_route)])
+            self.assertFalse(records["workspace_route"]["dual_write_enabled"])
+            self.assertFalse(records["workspace_route"]["dual_write_in_scope"])
+            self.assertEqual(records["workspace_route"]["migration_status"], "dual-write-out-of-scope")
 
     def test_platform_pipeline_writes_workspace_contract_and_manifest_entry(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -7,7 +7,16 @@ from pathlib import Path
 from unittest import TestCase
 
 from reverse_deepagent.subagents.delivery import build_delivery_subagent
-from reverse_deepagent.tools.delivery_tools import make_local_delivery_executor_tool
+from reverse_deepagent.tools.delivery_tools import (
+    make_delivery_recovery_executor_tool,
+    make_delivery_resume_planner_tool,
+    make_delivery_resume_workflow_scheduler_tool,
+    make_delivery_rollback_executor_tool,
+    make_delivery_rollback_state_writer_tool,
+    make_delivery_transaction_lock_provider_tool,
+    make_delivery_transition_executor_tool,
+    make_local_delivery_executor_tool,
+)
 
 
 class DeliveryToolTests(TestCase):
@@ -28,6 +37,15 @@ class DeliveryToolTests(TestCase):
             self.assertTrue(result["dry_run"])
             self.assertFalse(result["filesystem_artifact_mutated"])
             self.assertFalse((root / "delivery").exists())
+            audit = result["delivery_artifact_source_audit"]
+            self.assertEqual(audit["schema_version"], "reverse-deepagent.delivery-source-compatibility-audit.v1")
+            self.assertEqual(audit["source_path_count"], 1)
+            self.assertEqual(audit["source_artifact_ref_count"], 0)
+            self.assertEqual(audit["legacy_source_path_count"], 1)
+            self.assertEqual(audit["workspace_resolved_count"], 1)
+            planned_audit = result["planned_artifacts"][0]["metadata"]["delivery_source_audit"]
+            self.assertEqual(planned_audit["source_input_kind"], "source-path")
+            self.assertEqual(planned_audit["source_path_kind"], "legacy-source-path")
 
     def test_local_delivery_tool_apply_writes_local_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -59,6 +77,214 @@ class DeliveryToolTests(TestCase):
             self.assertFalse(result["manifest_revision_committed"])
             self.assertTrue((root / "delivery" / "delivery-receipt.json").exists())
             self.assertTrue((root / "delivery" / "delivery-transaction-journal.json").exists())
+
+
+    def test_local_delivery_tool_resolves_source_artifact_ref_in_dry_run(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            tool = make_local_delivery_executor_tool(root / "delivery", default_artifact_root=root)
+
+            result = tool(
+                artifacts_json=json.dumps([{"source_artifact_ref": "workspace_final"}]),
+                transaction_id="tx-tool-artifact-ref-dry-run",
+            )
+
+            self.assertEqual(result["status"], "planned")
+            self.assertTrue(result["dry_run"])
+            self.assertFalse(result["filesystem_artifact_mutated"])
+            self.assertFalse((root / "delivery").exists())
+            planned = result["planned_artifacts"][0]
+            self.assertEqual(planned["artifact_key"], "workspace_final")
+            self.assertEqual(planned["source_path"], str(source.resolve()))
+            self.assertEqual(planned["metadata"]["source_artifact_ref"], "workspace_final")
+            self.assertEqual(planned["metadata"]["workspace_artifact_read"]["resolution"]["artifact_key"], "workspace_final")
+            self.assertEqual(planned["metadata"]["delivery_source_audit"]["source_input_kind"], "workspace-artifact-ref")
+            self.assertEqual(planned["metadata"]["delivery_source_audit"]["source_path_compatibility"], "resolver-ready")
+            self.assertEqual(result["delivery_artifact_source_audit"]["source_artifact_ref_count"], 1)
+            self.assertEqual(result["delivery_artifact_source_audit"]["source_path_count"], 0)
+            self.assertEqual(result["delivery_artifact_source_audit"]["workspace_resolved_count"], 1)
+
+    def test_local_delivery_tool_resolves_source_artifact_ref_in_apply_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            tool = make_local_delivery_executor_tool(root / "delivery", default_artifact_root=root)
+
+            result = tool(
+                artifacts_json=json.dumps(
+                    [
+                        {
+                            "source_artifact_ref": "virtual://workspace/delivery/final-result.json",
+                            "destination_name": "final-result.json",
+                        }
+                    ]
+                ),
+                transaction_id="tx-tool-artifact-ref-apply",
+                mode="apply",
+            )
+
+            self.assertEqual(result["status"], "delivered")
+            self.assertFalse(result["dry_run"])
+            self.assertTrue(result["filesystem_artifact_mutated"])
+            delivered = result["receipt"]["delivered_artifacts"][0]
+            self.assertEqual(delivered["source_path"], str(source.resolve()))
+            self.assertEqual(delivered["metadata"]["source_artifact_ref"], "virtual://workspace/delivery/final-result.json")
+            self.assertEqual(delivered["metadata"]["delivery_source_audit"]["artifact_ref_kind"], "virtual-uri")
+            self.assertEqual(delivered["metadata"]["delivery_source_audit"]["hit_path_kind"], "legacy-canonical")
+            self.assertTrue((root / "delivery" / "final-result.json").exists())
+
+    def test_local_delivery_tool_audits_mixed_source_path_compatibility(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as external_tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            external_source = Path(external_tmp) / "external-report.json"
+            external_source.write_text('{"external": true}\n', encoding="utf-8")
+            tool = make_local_delivery_executor_tool(root / "delivery", default_artifact_root=root)
+
+            result = tool(
+                artifacts_json=json.dumps(
+                    [
+                        {
+                            "source_path": str(source),
+                            "artifact_key": "workspace_final",
+                            "destination_name": "final-result.json",
+                        },
+                        {
+                            "source_path": str(external_source),
+                            "artifact_key": "external_report",
+                            "destination_name": "external-report.json",
+                        },
+                    ]
+                ),
+                transaction_id="tx-tool-source-path-audit",
+            )
+
+            audit = result["delivery_artifact_source_audit"]
+            self.assertEqual(audit["artifact_count"], 2)
+            self.assertEqual(audit["source_path_count"], 2)
+            self.assertEqual(audit["source_artifact_ref_count"], 0)
+            self.assertEqual(audit["legacy_source_path_count"], 1)
+            self.assertEqual(audit["external_source_path_count"], 1)
+            self.assertEqual(audit["workspace_resolved_count"], 1)
+            by_key = {item["artifact_key"]: item for item in audit["items"]}
+            self.assertEqual(by_key["workspace_final"]["source_path_kind"], "legacy-source-path")
+            self.assertEqual(by_key["external_report"]["source_path_kind"], "external-filesystem-source-path")
+            self.assertTrue(by_key["external_report"]["explicit_filesystem_boundary"])
+
+    def test_local_delivery_tool_rejects_ambiguous_source_path_and_artifact_ref(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            tool = make_local_delivery_executor_tool(root / "delivery", default_artifact_root=root)
+
+            with self.assertRaisesRegex(ValueError, "must not provide both source_path and source_artifact_ref"):
+                tool(
+                    artifacts_json=json.dumps(
+                        [
+                            {
+                                "source_path": str(source),
+                                "source_artifact_ref": "workspace_final",
+                                "artifact_key": "workspace_final",
+                            }
+                        ]
+                    ),
+                    transaction_id="tx-tool-ambiguous-source",
+                )
+
+    def test_local_delivery_tool_can_require_transaction_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            tool = make_local_delivery_executor_tool(root / "delivery")
+
+            result = tool(
+                artifacts_json=json.dumps([{"source_path": str(source), "artifact_key": "workspace_final"}]),
+                transaction_id="tx-tool-lock",
+                mode="apply",
+                require_transaction_lock=True,
+                transaction_lock_owner="agent-a",
+                transaction_lock_lease_seconds=60,
+            )
+
+            lock_path = root / "delivery" / "delivery-transaction-lock.json"
+            self.assertEqual(result["status"], "delivered")
+            self.assertIsNotNone(result["transaction_lock"])
+            self.assertTrue(result["transaction_lock"]["lock_acquired"])
+            self.assertEqual(result["transaction_lock"]["owner"], "agent-a")
+            self.assertTrue(lock_path.exists())
+            lock = json.loads(lock_path.read_text(encoding="utf-8"))
+            self.assertEqual(lock["operation"], "local_delivery_apply")
+            self.assertFalse(lock["metadata"]["distributed_lock"])
+
+    def test_local_delivery_tool_can_release_transaction_lock_with_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            delivery_root = root / "delivery"
+            delivery_root.mkdir(parents=True)
+            lock_path = delivery_root / "delivery-transaction-lock.json"
+            lock_path.write_text(
+                json.dumps(
+                    {
+                        "transaction_id": "tx-existing",
+                        "owner": "agent-a",
+                        "resume_token": "resume-a",
+                        "lease_expires_at": "2999-01-01T00:00:00+00:00",
+                        "status": "acquired",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            tool = make_local_delivery_executor_tool(delivery_root)
+
+            result = tool(
+                artifacts_json="[]",
+                transaction_id="tx-tool-release",
+                mode="apply",
+                release_transaction_lock=True,
+                approve_transaction_lock_release=True,
+                expected_transaction_lock_owner="agent-a",
+                expected_transaction_lock_transaction_id="tx-existing",
+                expected_resume_token="resume-a",
+            )
+
+            self.assertEqual(result["status"], "lock_released")
+            self.assertIsNotNone(result["transaction_lock_release"])
+            self.assertTrue(result["transaction_lock_release"]["lock_removed"])
+            self.assertFalse(lock_path.exists())
+            self.assertTrue((delivery_root / "delivery-transaction-lock-release.json").exists())
+
+    def test_delivery_transaction_lock_provider_tool_apply_writes_provider_records(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tool = make_delivery_transaction_lock_provider_tool(root / "delivery")
+
+            result = tool(
+                transaction_id="tx-tool-provider-lock",
+                owner="agent-a",
+                action="acquire_lock",
+                mode="apply",
+                metadata_json=json.dumps({"source": "delivery-tool-test"}),
+            )
+
+            self.assertEqual(result["status"], "acquired")
+            self.assertEqual(result["provider_id"], "local-file-lock")
+            self.assertTrue(result["lock_acquired"])
+            self.assertTrue(result["side_effect_policy"]["distributed_lock_contract"])
+            self.assertFalse(result["side_effect_policy"]["external_service_contacted"])
+            self.assertFalse(result["side_effect_policy"]["delivery_executed"])
+            self.assertTrue((root / "delivery" / "delivery-distributed-transaction-lock.json").exists())
+            self.assertTrue((root / "delivery" / "delivery-distributed-transaction-lock-operation.json").exists())
 
     def test_local_delivery_tool_can_commit_manifest_revision(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -290,6 +516,214 @@ class DeliveryToolTests(TestCase):
             self.assertEqual(json.loads(backend_manifest.read_text(encoding="utf-8")), original_manifest)
             self.assertTrue((root / "delivery" / "backend-artifact-manifest-recovery.json").exists())
 
+    def test_delivery_transition_tool_can_commit_cross_run_transaction(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir(parents=True)
+            source = workspace / "final-result.json"
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            backend_manifest = workspace / "backend-artifact-manifest.json"
+            backend_manifest.write_text('{"entries": []}\n', encoding="utf-8")
+            local_tool = make_local_delivery_executor_tool(root / "delivery")
+            transition_tool = make_delivery_transition_executor_tool(root / "delivery")
+
+            local_tool(
+                artifacts_json=json.dumps([{"source_path": str(source), "artifact_key": "workspace_final"}]),
+                transaction_id="tx-tool-transition-source",
+                mode="apply",
+                commit_backend_manifest_mutation=True,
+                preflight_backend_manifest_in_place_mutation=True,
+                approve_backend_manifest_in_place_mutation=True,
+                expected_backend_manifest_digest_sha256=_sha256_file(backend_manifest),
+                backend_manifest_path=str(backend_manifest),
+            )
+            preflight = transition_tool(
+                transaction_id="tx-tool-transition-preflight",
+                mode="apply",
+                transition="preflight_backend_manifest_recovery",
+                expected_transaction_id="tx-tool-transition-source",
+                backend_manifest_path=str(backend_manifest),
+            )
+            result = transition_tool(
+                transaction_id="tx-tool-transition-commit",
+                mode="apply",
+                transition="commit_cross_run_transaction",
+                expected_transaction_id="tx-tool-transition-source",
+                backend_manifest_path=str(backend_manifest),
+            )
+
+            self.assertEqual(preflight["status"], "executed")
+            self.assertEqual(result["status"], "executed")
+            self.assertTrue(result["execution_result"]["cross_run_transaction_committed"])
+            self.assertTrue((root / "delivery" / "delivery-transition-execution.json").exists())
+
+    def test_delivery_recovery_tool_can_apply_approved_recovery_workflow(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir(parents=True)
+            source = workspace / "final-result.json"
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            backend_manifest = workspace / "backend-artifact-manifest.json"
+            backend_manifest.write_text('{"entries": []}\n', encoding="utf-8")
+            original_manifest = json.loads(backend_manifest.read_text(encoding="utf-8"))
+            local_tool = make_local_delivery_executor_tool(root / "delivery")
+            recovery_tool = make_delivery_recovery_executor_tool(root / "delivery")
+
+            local_tool(
+                artifacts_json=json.dumps([{"source_path": str(source), "artifact_key": "workspace_final"}]),
+                transaction_id="tx-tool-recovery-workflow-source",
+                mode="apply",
+                commit_backend_manifest_mutation=True,
+                preflight_backend_manifest_in_place_mutation=True,
+                approve_backend_manifest_in_place_mutation=True,
+                expected_backend_manifest_digest_sha256=_sha256_file(backend_manifest),
+                backend_manifest_path=str(backend_manifest),
+            )
+            result = recovery_tool(
+                transaction_id="tx-tool-recovery-workflow",
+                action="apply_recovery",
+                mode="apply",
+                expected_transaction_id="tx-tool-recovery-workflow-source",
+                approve_recovery=True,
+                backend_manifest_path=str(backend_manifest),
+            )
+
+            self.assertEqual(result["status"], "recovered")
+            self.assertTrue(result["side_effect_policy"]["manifest_recovered"])
+            self.assertEqual(json.loads(backend_manifest.read_text(encoding="utf-8")), original_manifest)
+            self.assertTrue((root / "delivery" / "delivery-recovery-execution.json").exists())
+
+    def test_delivery_rollback_state_tool_can_write_state_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir(parents=True)
+            source = workspace / "final-result.json"
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            backend_manifest = workspace / "backend-artifact-manifest.json"
+            backend_manifest.write_text('{"entries": []}\n', encoding="utf-8")
+            local_tool = make_local_delivery_executor_tool(root / "delivery")
+            rollback_state_tool = make_delivery_rollback_state_writer_tool(root / "delivery")
+
+            local_tool(
+                artifacts_json=json.dumps([{"source_path": str(source), "artifact_key": "workspace_final"}]),
+                transaction_id="tx-tool-rollback-state-source",
+                mode="apply",
+                commit_backend_manifest_mutation=True,
+                preflight_backend_manifest_in_place_mutation=True,
+                approve_backend_manifest_in_place_mutation=True,
+                expected_backend_manifest_digest_sha256=_sha256_file(backend_manifest),
+                backend_manifest_path=str(backend_manifest),
+            )
+            result = rollback_state_tool(
+                transaction_id="tx-tool-rollback-state",
+                mode="apply",
+                metadata_json=json.dumps({"source": "tool-test"}),
+            )
+
+            state_path = root / "delivery" / "delivery-rollback-state.json"
+            self.assertEqual(result["status"], "written")
+            self.assertEqual(result["state_record_path"], str(state_path.resolve()))
+            self.assertEqual(result["rollback_state"]["phase"], "rollback_preflight_required")
+            self.assertTrue(result["side_effect_policy"]["writes_rollback_state_artifact"])
+            self.assertFalse(result["side_effect_policy"]["manifest_mutated"])
+            self.assertFalse(result["side_effect_policy"]["transaction_committed"])
+            self.assertTrue(state_path.exists())
+
+    def test_delivery_rollback_tool_can_preflight_rollback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir(parents=True)
+            source = workspace / "final-result.json"
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            backend_manifest = workspace / "backend-artifact-manifest.json"
+            backend_manifest.write_text('{"entries": []}\n', encoding="utf-8")
+            local_tool = make_local_delivery_executor_tool(root / "delivery")
+            rollback_tool = make_delivery_rollback_executor_tool(root / "delivery")
+
+            local_tool(
+                artifacts_json=json.dumps([{"source_path": str(source), "artifact_key": "workspace_final"}]),
+                transaction_id="tx-tool-rollback-preflight-source",
+                mode="apply",
+                commit_backend_manifest_mutation=True,
+                preflight_backend_manifest_in_place_mutation=True,
+                approve_backend_manifest_in_place_mutation=True,
+                expected_backend_manifest_digest_sha256=_sha256_file(backend_manifest),
+                backend_manifest_path=str(backend_manifest),
+            )
+            result = rollback_tool(
+                transaction_id="tx-tool-rollback-preflight",
+                action="preflight_rollback",
+                mode="apply",
+                expected_transaction_id="tx-tool-rollback-preflight-source",
+                backend_manifest_path=str(backend_manifest),
+                metadata_json=json.dumps({"source": "tool-test"}),
+            )
+
+            self.assertEqual(result["status"], "preflighted")
+            self.assertEqual(result["after_rollback_state"]["phase"], "rollback_decision_required")
+            self.assertTrue(result["side_effect_policy"]["writes_rollback_state_artifact"])
+            self.assertTrue(result["side_effect_policy"]["writes_recovery_preflight"])
+            self.assertFalse(result["side_effect_policy"]["manifest_recovered"])
+            self.assertFalse(result["side_effect_policy"]["transaction_committed"])
+            self.assertTrue((root / "delivery" / "delivery-rollback-state.json").exists())
+            self.assertTrue((root / "delivery" / "backend-artifact-manifest-recovery-preflight.json").exists())
+            self.assertTrue((root / "delivery" / "delivery-rollback-execution.json").exists())
+
+    def test_delivery_rollback_tool_can_apply_approved_rollback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir(parents=True)
+            source = workspace / "final-result.json"
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            backend_manifest = workspace / "backend-artifact-manifest.json"
+            backend_manifest.write_text('{"entries": []}\n', encoding="utf-8")
+            original_manifest = json.loads(backend_manifest.read_text(encoding="utf-8"))
+            local_tool = make_local_delivery_executor_tool(root / "delivery")
+            rollback_tool = make_delivery_rollback_executor_tool(root / "delivery")
+
+            local_tool(
+                artifacts_json=json.dumps([{"source_path": str(source), "artifact_key": "workspace_final"}]),
+                transaction_id="tx-tool-rollback-apply-source",
+                mode="apply",
+                commit_backend_manifest_mutation=True,
+                preflight_backend_manifest_in_place_mutation=True,
+                approve_backend_manifest_in_place_mutation=True,
+                expected_backend_manifest_digest_sha256=_sha256_file(backend_manifest),
+                backend_manifest_path=str(backend_manifest),
+            )
+            rollback_tool(
+                transaction_id="tx-tool-rollback-apply-preflight",
+                action="preflight_rollback",
+                mode="apply",
+                expected_transaction_id="tx-tool-rollback-apply-source",
+                backend_manifest_path=str(backend_manifest),
+            )
+            result = rollback_tool(
+                transaction_id="tx-tool-rollback-apply",
+                action="apply_rollback",
+                mode="apply",
+                expected_transaction_id="tx-tool-rollback-apply-source",
+                expected_rollback_phase="rollback_decision_required",
+                approve_rollback=True,
+                backend_manifest_path=str(backend_manifest),
+                metadata_json=json.dumps({"source": "tool-test"}),
+            )
+
+            self.assertEqual(result["status"], "rolled_back")
+            self.assertEqual(result["after_rollback_state"]["phase"], "rollback_applied")
+            self.assertTrue(result["side_effect_policy"]["manifest_recovered"])
+            self.assertTrue(result["side_effect_policy"]["local_manifest_rollback_performed"])
+            self.assertFalse(result["side_effect_policy"]["physical_rollback_performed"])
+            self.assertFalse(result["side_effect_policy"]["transaction_committed"])
+            self.assertFalse(result["side_effect_policy"]["external_delivery_performed"])
+            self.assertEqual(json.loads(backend_manifest.read_text(encoding="utf-8")), original_manifest)
+            self.assertTrue((root / "delivery" / "backend-artifact-manifest-recovery.json").exists())
+
     def test_local_delivery_tool_can_request_external_delivery_review_only_record(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -386,13 +820,67 @@ class DeliveryToolTests(TestCase):
             self.assertNotIn("Token hidden", serialized_result)
             self.assertFalse((root / "delivery").exists())
 
+    def test_local_delivery_tool_can_plan_github_release_provider_config_without_exporting_token(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workspace" / "final-result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"ok": true}\n', encoding="utf-8")
+            tool = make_local_delivery_executor_tool(root / "delivery")
+
+            result = tool(
+                artifacts_json=json.dumps([{"source_path": str(source), "artifact_key": "workspace_final"}]),
+                transaction_id="tx-tool-github-release-plan",
+                request_external_delivery=True,
+                external_delivery_provider_id="gh-release",
+                external_delivery_provider_config_json=json.dumps(
+                    {
+                        "repository": "owner/repo",
+                        "tag_name": "v0-test",
+                        "asset_name": "reverse-delivery.json",
+                        "token": "ghp_tool_secret",
+                        "api_base_url": "https://user:pass@api.github.invalid?api_token=hidden",
+                    }
+                ),
+            )
+
+            self.assertEqual(result["status"], "planned")
+            self.assertFalse(result["external_delivery_performed"])
+            self.assertEqual(result["external_delivery_result"]["provider_id"], "github-release")
+            metadata = result["external_delivery_result"]["metadata"]
+            self.assertEqual(metadata["repository"], "owner/repo")
+            self.assertEqual(metadata["tag_name"], "v0-test")
+            self.assertEqual(metadata["asset_name"], "reverse-delivery.json")
+            self.assertEqual(metadata["release_api_url"], "https://api.github.invalid")
+            self.assertTrue(metadata["api_query_redacted"])
+            self.assertTrue(metadata["api_credentials_redacted"])
+            self.assertFalse(metadata["release_request_attempted"])
+            serialized_result = json.dumps(result, ensure_ascii=False)
+            self.assertNotIn("ghp_tool_secret", serialized_result)
+            self.assertNotIn("api_token=hidden", serialized_result)
+            self.assertNotIn("user:pass", serialized_result)
+            self.assertFalse((root / "delivery").exists())
+
 
 class DeliverySubagentToolTests(TestCase):
-    def test_delivery_subagent_exposes_local_delivery_tool_only(self) -> None:
+    def test_delivery_subagent_exposes_delivery_tools(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             subagent = build_delivery_subagent(Path(tmp) / "artifacts")
             tool_names = [tool.__name__ for tool in subagent["tools"]]
-            self.assertEqual(tool_names, ["execute_local_delivery"])
+            self.assertEqual(
+                tool_names,
+                [
+                    "execute_local_delivery",
+                    "plan_delivery_resume",
+                    "execute_delivery_resume",
+                    "execute_delivery_resume_workflow",
+                    "manage_delivery_transaction_lock_provider",
+                    "execute_delivery_transition",
+                    "execute_delivery_recovery",
+                    "write_delivery_rollback_state",
+                    "execute_delivery_rollback",
+                ],
+            )
 
 
 def _sha256_file(path: Path) -> str:

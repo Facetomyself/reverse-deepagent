@@ -15,6 +15,69 @@ from reverse_deepagent.runtime.legacy_mcp import LegacyMcpPluginUnavailableError
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REVERSE_AGENT_FIXTURE = shutil.which("reverse-agent-fixture") or str(REPO_ROOT / ".venv/bin/reverse-agent-fixture")
 REVERSE_AGENT_FIXTURE_SMOKE = shutil.which("reverse-agent-fixture-smoke") or str(REPO_ROOT / ".venv/bin/reverse-agent-fixture-smoke")
+RAW_REDACTION_FIXTURE_VALUES = (
+    "Bearer super-secret-token",
+    "sid=raw-session; csrf=raw-csrf",
+    "auth_token=raw-token",
+    "csrf_token=raw-csrf",
+    "raw-token",
+    "raw-session",
+    "raw-csrf",
+)
+
+
+def _assert_raw_redaction_fixtures_absent(testcase: unittest.TestCase, payload: object) -> None:
+    serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+    for raw_value in RAW_REDACTION_FIXTURE_VALUES:
+        testcase.assertNotIn(raw_value, serialized)
+
+
+def _write_fixture_pipeline_artifacts(artifact_root: Path) -> dict[str, str]:
+    workspace_dir = artifact_root / "workspace"
+    reports_dir = artifact_root / "reports"
+    exports_dir = artifact_root / "exports"
+    workspace_dir.mkdir(parents=True, exist_ok=True)
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    exports_dir.mkdir(parents=True, exist_ok=True)
+    redacted_runtime_context = {
+        "localStorage": {"auth_token": "<redacted>"},
+        "sessionStorage": {"csrf_token": "<redacted>"},
+        "cookie": "sid=<redacted>; csrf=<redacted>",
+        "headers": {"Authorization": "Bearer <redacted>", "Cookie": "sid=<redacted>; csrf=<redacted>"},
+        "raw_value_available": False,
+    }
+    final_result = {
+        "status": "success",
+        "evidence": [
+            {
+                "source": "runtime_context",
+                "details": redacted_runtime_context,
+            }
+        ],
+    }
+    artifact_index = {
+        "workspace": {"runtime_context": str(workspace_dir / "runtime-context.json")},
+        "reports": {"json": str(reports_dir / "demo-final-result.json")},
+        "runtime_exports": {
+            "exports": [
+                {
+                    "tool": "collector_redaction_fixture",
+                    "payload": redacted_runtime_context,
+                }
+            ]
+        },
+    }
+    files = {
+        "workspace_runtime_context": workspace_dir / "runtime-context.json",
+        "workspace_final": workspace_dir / "final-result.json",
+        "json": reports_dir / "demo-final-result.json",
+        "index": exports_dir / "artifact-index.json",
+    }
+    files["workspace_runtime_context"].write_text(json.dumps(redacted_runtime_context, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    files["workspace_final"].write_text(json.dumps(final_result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    files["json"].write_text(json.dumps(final_result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    files["index"].write_text(json.dumps(artifact_index, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return {key: str(path) for key, path in files.items()}
 
 
 class FixtureCliTests(unittest.TestCase):
@@ -69,6 +132,70 @@ class FixtureCliTests(unittest.TestCase):
         self.assertTrue(payload["fixture"]["base_url"].startswith("http://127.0.0.1:"))
         self.assertEqual(payload["fixture"]["profile"], "default")
         self.assertEqual(payload["pipeline"]["final_result"]["status"], "success")
+
+    def test_fixture_smoke_artifact_emission_keeps_collector_redacted_values(self) -> None:
+        class FakeProfile:
+            value = "default"
+
+        class FakeFixture:
+            base_url = "http://127.0.0.1:8765"
+            profile = FakeProfile()
+            raw_collector_values = {
+                "Authorization": "Bearer super-secret-token",
+                "Cookie": "sid=raw-session; csrf=raw-csrf",
+                "localStorage": {"auth_token": "raw-token"},
+                "sessionStorage": {"csrf_token": "raw-csrf"},
+            }
+
+            def close(self) -> None:
+                pass
+
+        class FakeOutput:
+            def __init__(self, artifacts: dict[str, str]) -> None:
+                self.artifacts = artifacts
+                self.final_result = {
+                    "status": "success",
+                    "evidence": [
+                        {
+                            "source": "runtime_context",
+                            "details": {
+                                "localStorage": {"auth_token": "<redacted>"},
+                                "sessionStorage": {"csrf_token": "<redacted>"},
+                                "cookie": "sid=<redacted>; csrf=<redacted>",
+                                "headers": {"Authorization": "Bearer <redacted>", "Cookie": "sid=<redacted>; csrf=<redacted>"},
+                            },
+                        }
+                    ],
+                }
+
+            def model_dump(self, mode: str = "json", exclude_none: bool = True) -> dict[str, object]:
+                return {"final_result": self.final_result, "artifacts": self.artifacts}
+
+        def fake_run_reverse_pipeline(**kwargs):
+            artifact_root = Path(kwargs["artifact_root"])
+            return FakeOutput(_write_fixture_pipeline_artifacts(artifact_root))
+
+        stdout = StringIO()
+        stderr = StringIO()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            artifact_root = Path(tmpdir) / "fixture-smoke-redaction"
+            with patch("reverse_deepagent.fixture_smoke.start_fixture_server", return_value=FakeFixture()):
+                with patch("reverse_deepagent.fixture_smoke.run_reverse_pipeline", side_effect=fake_run_reverse_pipeline):
+                    with redirect_stdout(stdout), redirect_stderr(stderr):
+                        exit_code = main_fixture_smoke(["--runtime", "mock", "--artifact-root", str(artifact_root)])
+
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(stderr.getvalue(), "")
+            self.assertEqual(payload["pipeline"]["final_result"]["status"], "success")
+            _assert_raw_redaction_fixtures_absent(self, payload)
+            _assert_raw_redaction_fixtures_absent(self, payload["pipeline"])
+
+            artifacts = payload["pipeline"]["artifacts"]
+            for artifact_path in artifacts.values():
+                path = Path(artifact_path)
+                self.assertTrue(path.exists())
+                _assert_raw_redaction_fixtures_absent(self, json.loads(path.read_text(encoding="utf-8")))
 
     def test_fixture_smoke_warns_for_deprecated_mcp_alias(self) -> None:
         class FakeProfile:

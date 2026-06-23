@@ -112,7 +112,12 @@ class SourceLogpointManagerTests(unittest.TestCase):
                 "url_pattern": ".*bundle\\.js$",
                 "line_number": 99,
                 "column_number": 9,
-                "source_map": {"version": 3, "sources": ["src/app.js"], "names": [], "mappings": "AAAA"},
+                "source_map": {
+                    "version": 3,
+                    "sources": ["webpack://demo/./src/app.js?cache=abc"],
+                    "names": ["buildSign"],
+                    "mappings": encode_vlq_segment([0, 0, 0, 0, 0]),
+                },
                 "original_source": "src/app.js",
                 "original_line": 0,
                 "original_column": 0,
@@ -126,6 +131,8 @@ class SourceLogpointManagerTests(unittest.TestCase):
         self.assertEqual(spec.column_number, 0)
         self.assertEqual(spec.remap["status"], "success")
         self.assertEqual(spec.remap["strategy"], "source_map_exact")
+        self.assertEqual(spec.remap["generated"]["metadata"]["name"], "buildSign")
+        self.assertTrue(spec.remap["generated"]["metadata"]["source_match"]["url_equivalence"])
 
     def test_from_context_remaps_source_map_with_bias(self) -> None:
         source_map = {

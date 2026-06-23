@@ -1,0 +1,34 @@
+{
+  "schema_version": "reverse-deepagent.browser-provider-smoke.v1",
+  "artifact_key": "workspace_browser_provider_smoke",
+  "mode": "metadata-only",
+  "ok": true,
+  "requested_provider_id": "cloakbrowser",
+  "resolved_provider_id": "cloakbrowser",
+  "requested_provider_config": {
+    "provider_id": "cloakbrowser",
+    "browser_url": "http://127.0.0.1:9222",
+    "connect_mode_requested": true,
+    "launch_mode_requested": false,
+    "persistent_context_requested": false,
+    "proxy_configured": false,
+    "redaction_safe": true
+  },
+  "provider": {
+    "provider_id": "cloakbrowser",
+    "smoke": {
+      "status": "skipped",
+      "reason": "metadata_only"
+    }
+  },
+  "side_effect_policy": {
+    "metadata_only": true,
+    "provider_factories_invoked": false,
+    "availability_check_requested": false,
+    "launch_smoke_requested": false,
+    "starts_browser": false,
+    "probes_cdp_endpoint": false,
+    "calls_mcp": false,
+    "touches_mobile_full_runtime_chains": false
+  }
+}

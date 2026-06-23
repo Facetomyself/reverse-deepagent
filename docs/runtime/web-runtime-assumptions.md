@@ -46,7 +46,7 @@ These responsibilities belong to Web backends such as:
 - `playwright-cli` for side-effect-light Playwright CLI probes plus static source fetch.
 - `chrome-cdp` for existing Chrome DevTools endpoint probes without launching Chrome.
 - `browser-cli` for generic local browser CLI shims.
-- `legacy-mcp` / `mcp` for JSReverser MCP compatibility while native collectors reach parity.
+- `legacy-mcp` for JSReverser MCP compatibility while native collectors reach parity; `mcp` and `jsreverser-mcp` are deprecated aliases, not recommended runtime ids.
 
 They should not be treated as requirements for `android-*`, `ios-*`, or `mini-program-*` backends.
 

@@ -1,13 +1,18 @@
 import unittest
 
 from reverse_deepagent.browser.capabilities import BrowserProviderCapabilities
+from reverse_deepagent.browser.providers import CloakBrowserProvider, PlaywrightChromiumProvider, RemoteCDPProvider
 from reverse_deepagent.browser.smoke import (
     BROWSER_PROVIDER_COMPATIBILITY_RULE_VERSION,
+    BROWSER_PROVIDER_PRODUCTION_READINESS_VERSION,
     DEFAULT_BROWSER_PROVIDER_MATRIX,
+    browser_provider_production_readiness,
+    list_browser_provider_compatibility_rules,
     browser_provider_metadata_matrix_payload,
     browser_provider_smoke_matrix_payload,
     browser_provider_smoke_row,
     legacy_browser_provider_payload_from_smoke_row,
+    list_browser_provider_production_readiness_rules,
     validate_browser_provider_capability_compatibility,
 )
 
@@ -106,6 +111,166 @@ class BrowserProviderSmokeMatrixTests(unittest.TestCase):
             self.assertEqual(lifecycle["availability_checked"], "not_checked")
             self.assertEqual(lifecycle["session_start_requested"], "skipped")
 
+    def test_compatibility_rule_catalog_is_serializable_and_extensible(self) -> None:
+        rules = list_browser_provider_compatibility_rules()
+        rule_ids = {rule["rule_id"] for rule in rules}
+        self.assertIn("breakpoints_require_cdp", rule_ids)
+        self.assertIn("humanize_requires_page_control_transport", rule_ids)
+        self.assertIn("mobile_emulation_requires_page_control_transport", rule_ids)
+        self.assertIn("extensions_require_launch_or_persistent_context", rule_ids)
+        self.assertIn("proxy_requires_launch_or_managed_browser", rule_ids)
+        for rule in rules:
+            self.assertIn(rule["severity"], {"error", "warning"})
+            self.assertIn("message", rule)
+            self.assertIsInstance(rule["when_all"], list)
+            self.assertIsInstance(rule["requires_any"], list)
+
+
+    def test_production_readiness_rule_catalog_is_serializable_and_provider_specific(self) -> None:
+        rules = list_browser_provider_production_readiness_rules()
+        rule_ids = {rule["rule_id"] for rule in rules}
+        self.assertIn("playwright_chromium_lifecycle_declared", rule_ids)
+        self.assertIn("remote_cdp_attach_contract_declared", rule_ids)
+        self.assertIn("cloakbrowser_production_lifecycle_declared", rule_ids)
+        self.assertIn("hosted_cdp_reference_lifecycle_declared", rule_ids)
+        self.assertIn("browserless_cdp_contract_declared", rule_ids)
+        self.assertIn("browserbase_cdp_contract_declared", rule_ids)
+        self.assertIn("antidetect_cdp_contract_declared", rule_ids)
+        playwright_rule = next(rule for rule in rules if rule["rule_id"] == "playwright_chromium_lifecycle_declared")
+        self.assertEqual(playwright_rule["provider_ids"], ["playwright-chromium"])
+        self.assertEqual(playwright_rule["transports"], ["playwright"])
+        self.assertIn("supports_persistent_context", playwright_rule["requires_all"])
+        remote_rule = next(rule for rule in rules if rule["rule_id"] == "remote_cdp_attach_contract_declared")
+        self.assertEqual(remote_rule["provider_ids"], ["remote-cdp"])
+        self.assertEqual(remote_rule["metadata_equals"]["profile_lifecycle"], "external-browser-owned")
+        cloak_rule = next(rule for rule in rules if rule["rule_id"] == "cloakbrowser_production_lifecycle_declared")
+        self.assertEqual(cloak_rule["provider_ids"], ["cloakbrowser"])
+        self.assertIn("supports_stealth", cloak_rule["requires_all"])
+        hosted_rule = next(rule for rule in rules if rule["rule_id"] == "hosted_cdp_reference_lifecycle_declared")
+        self.assertEqual(hosted_rule["severity"], "warning")
+        self.assertEqual(hosted_rule["provider_ids"], ["hosted-cdp-reference"])
+        self.assertIn("supports_launch", hosted_rule["requires_all"])
+        self.assertEqual(hosted_rule["metadata_equals"]["session_recovery"], "session-id-reattach-or-endpoint-connect")
+        browserless_rule = next(rule for rule in rules if rule["rule_id"] == "browserless_cdp_contract_declared")
+        self.assertEqual(browserless_rule["provider_ids"], ["browserless-cdp"])
+        self.assertEqual(browserless_rule["transports"], ["browserless-cdp"])
+        self.assertIn("supports_runtime_eval", browserless_rule["requires_all"])
+        self.assertEqual(browserless_rule["metadata_equals"]["health_check_mode"], "explicit-browserless-cdp-contract-smoke")
+        browserbase_rule = next(rule for rule in rules if rule["rule_id"] == "browserbase_cdp_contract_declared")
+        self.assertEqual(browserbase_rule["provider_ids"], ["browserbase-cdp"])
+        self.assertEqual(browserbase_rule["transports"], ["browserbase-cdp"])
+        self.assertIn("supports_launch", browserbase_rule["requires_all"])
+        self.assertEqual(browserbase_rule["metadata_equals"]["health_check_mode"], "explicit-browserbase-session-smoke")
+        antidetect_rule = next(rule for rule in rules if rule["rule_id"] == "antidetect_cdp_contract_declared")
+        self.assertEqual(antidetect_rule["provider_ids"], ["antidetect-cdp"])
+        self.assertEqual(antidetect_rule["transports"], ["antidetect-cdp"])
+        self.assertIn("supports_launch", antidetect_rule["requires_all"])
+        self.assertIn("supports_stealth", antidetect_rule["requires_all"])
+        self.assertIn("supports_humanize", antidetect_rule["requires_all"])
+        self.assertEqual(antidetect_rule["metadata_equals"]["health_check_mode"], "explicit-antidetect-cdp-contract-smoke")
+        self.assertIn("endpoint_security_policy", remote_rule["required_metadata_keys"])
+        self.assertIn("stealth_policy", cloak_rule["required_metadata_keys"])
+        self.assertIn("allocation_lifecycle_policy", hosted_rule["required_metadata_keys"])
+        self.assertIn("account_boundary_policy", browserless_rule["required_metadata_keys"])
+        self.assertIn("allocation_lifecycle_policy", browserbase_rule["required_metadata_keys"])
+        self.assertIn("profile_persistence_policy", antidetect_rule["required_metadata_keys"])
+        self.assertIn("allocator_contract", antidetect_rule["required_metadata_keys"])
+
+    def test_builtin_provider_specific_readiness_rules_pass_without_runtime_side_effects(self) -> None:
+        providers = [
+            PlaywrightChromiumProvider(),
+            RemoteCDPProvider(),
+            CloakBrowserProvider(),
+        ]
+
+        for provider in providers:
+            with self.subTest(provider_id=provider.provider_id):
+                readiness = browser_provider_production_readiness(provider.describe().model_dump(mode="json"))
+                checks = {item["check_id"]: item for item in readiness["checks"]}
+                provider_specific = [
+                    item
+                    for item in checks.values()
+                    if str(item["check_id"]).startswith("provider_specific:")
+                ]
+                self.assertGreaterEqual(len(provider_specific), 1)
+                self.assertTrue(all(item["status"] == "pass" for item in provider_specific))
+                self.assertFalse(readiness["side_effect_policy"]["provider_factory_invoked"])
+                self.assertFalse(readiness["side_effect_policy"]["availability_checked"])
+                self.assertFalse(readiness["side_effect_policy"]["starts_browser"])
+
+    def test_provider_specific_readiness_rule_warns_on_drift(self) -> None:
+        readiness = browser_provider_production_readiness(
+            BrowserProviderCapabilities(
+                provider_id="hosted-cdp-reference",
+                display_name="Hosted CDP Reference",
+                transport="hosted-cdp-reference",
+                supports_launch=True,
+                supports_connect=True,
+                supports_cdp=True,
+                managed_browser=False,
+                production_readiness={
+                    "readiness_tier": "review-required",
+                    "health_check_mode": "explicit-endpoint-probe-after-vendor-session-allocation",
+                    "profile_lifecycle": "external-service-session-owned",
+                    "allocation_lifecycle_policy": "explicit-start-allocates-and-stop-releases-owned-session",
+                    "endpoint_security_policy": "caller-owned-or-reference-allocated-redacted-cdp-endpoint",
+                    "session_recovery": "connect-existing-endpoint",
+                    "intended_use": "reference-implementation-for-hosted-cdp-provider-packages",
+                    "side_effect_boundary": "metadata-only-by-default",
+                },
+            ).model_dump(mode="json")
+        )
+
+        self.assertEqual(readiness["status"], "review-required")
+        self.assertIn("provider_specific:hosted_cdp_reference_lifecycle_declared", readiness["warnings"])
+        checks = {item["check_id"]: item for item in readiness["checks"]}
+        self.assertEqual(checks["provider_specific:hosted_cdp_reference_lifecycle_declared"]["status"], "warn")
+
+    def test_provider_specific_required_metadata_marks_incomplete(self) -> None:
+        readiness = browser_provider_production_readiness(
+            BrowserProviderCapabilities(
+                provider_id="cloakbrowser",
+                display_name="CloakBrowser",
+                transport="cloakbrowser-playwright",
+                supports_launch=True,
+                supports_connect=True,
+                supports_persistent_context=True,
+                supports_cdp=True,
+                supports_playwright_api=True,
+                supports_proxy=True,
+                supports_stealth=True,
+                supports_humanize=True,
+                supports_extensions=True,
+                supports_mobile_emulation=True,
+                supports_network_events=True,
+                supports_response_body=True,
+                supports_request_initiator=True,
+                supports_script_source=True,
+                supports_websocket_frames=True,
+                supports_breakpoints=True,
+                supports_runtime_eval=True,
+                managed_browser=True,
+                production_readiness={
+                    "readiness_tier": "production-ready",
+                    "health_check_mode": "optional-sdk-or-connect-endpoint",
+                    "profile_lifecycle": "persistent-context-supported",
+                    "proxy_policy": "provider-level-redacted",
+                    "extension_policy": "launch-or-persistent-context",
+                    "humanize_policy": "supported",
+                    "session_recovery": "connect-over-cdp-or-persistent-context",
+                    "intended_use": "optional-stealth-browser-provider",
+                    "side_effect_boundary": "metadata-only-by-default",
+                },
+            ).model_dump(mode="json")
+        )
+
+        self.assertEqual(readiness["status"], "metadata-incomplete")
+        self.assertIn("stealth_policy", readiness["missing_metadata"])
+        checks = {item["check_id"]: item for item in readiness["checks"]}
+        provider_check = checks["provider_specific:cloakbrowser_production_lifecycle_declared"]
+        self.assertEqual(provider_check["status"], "missing")
+        self.assertEqual(provider_check["missing_metadata_keys"], ["stealth_policy"])
+        self.assertFalse(readiness["side_effect_policy"]["starts_browser"])
 
     def test_registration_metadata_matrix_does_not_call_provider_factory(self) -> None:
         metadata = [
@@ -126,17 +291,76 @@ class BrowserProviderSmokeMatrixTests(unittest.TestCase):
         self.assertFalse(payload["side_effect_policy"]["provider_factories_invoked"])
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["compatibility_rule_version"], BROWSER_PROVIDER_COMPATIBILITY_RULE_VERSION)
+        self.assertIn("compatibility_rules", payload)
+        self.assertIn("production_readiness_rules", payload)
+        self.assertGreater(len(payload["compatibility_rules"]), 5)
+        self.assertGreaterEqual(len(payload["production_readiness_rules"]), 1)
         self.assertEqual(payload["summary"]["provider_count"], 1)
         self.assertEqual(payload["summary"]["compatibility"]["compatible_count"], 1)
+        self.assertEqual(payload["production_readiness_version"], BROWSER_PROVIDER_PRODUCTION_READINESS_VERSION)
+        self.assertEqual(payload["summary"]["production_readiness"]["metadata_incomplete_count"], 1)
         row = payload["providers"][0]
         self.assertEqual(row["provider_id"], "registered-browser")
         self.assertEqual(row["aliases"], ["registered-alias"])
         self.assertEqual(row["supported_modes"], ["connect", "cdp", "runtime-eval"])
         self.assertEqual(row["compatibility"]["status"], "compatible")
+        self.assertEqual(row["production_readiness"]["status"], "metadata-incomplete")
+        self.assertFalse(row["production_readiness"]["side_effect_policy"]["starts_browser"])
         lifecycle = {item["stage"]: item["status"] for item in row["lifecycle"]}
         self.assertEqual(lifecycle["configured"], "ok")
         self.assertEqual(lifecycle["availability_checked"], "not_checked")
         self.assertEqual(row["smoke"]["status"], "skipped")
+
+    def test_production_readiness_classifies_provider_metadata(self) -> None:
+        readiness = browser_provider_production_readiness(
+            BrowserProviderCapabilities(
+                provider_id="production-browser",
+                display_name="Production Browser",
+                supports_launch=True,
+                supports_connect=True,
+                supports_persistent_context=True,
+                supports_proxy=True,
+                supports_extensions=True,
+                supports_humanize=True,
+                production_readiness={
+                    "readiness_tier": "production-ready",
+                    "health_check_mode": "explicit-metadata-or-launch-smoke",
+                    "profile_lifecycle": "persistent-context-supported",
+                    "proxy_policy": "provider-level-redacted",
+                    "extension_policy": "launch-controlled",
+                    "humanize_policy": "supported",
+                    "session_recovery": "connect-or-launch",
+                    "intended_use": "production-provider",
+                    "side_effect_boundary": "metadata-only-by-default",
+                },
+            ).model_dump(mode="json")
+        )
+
+        self.assertEqual(readiness["version"], BROWSER_PROVIDER_PRODUCTION_READINESS_VERSION)
+        self.assertEqual(readiness["status"], "production-ready")
+        self.assertEqual(readiness["missing_metadata"], [])
+        self.assertFalse(readiness["side_effect_policy"]["provider_factory_invoked"])
+        self.assertFalse(readiness["side_effect_policy"]["availability_checked"])
+        self.assertFalse(readiness["side_effect_policy"]["launch_smoke_requested"])
+
+    def test_production_readiness_marks_template_metadata_incomplete(self) -> None:
+        readiness = browser_provider_production_readiness(
+            BrowserProviderCapabilities(
+                provider_id="template-browser",
+                display_name="Template Browser",
+                production_readiness={
+                    "readiness_tier": "template-only",
+                    "health_check_mode": "replace-me",
+                    "profile_lifecycle": "replace-me",
+                    "session_recovery": "replace-me",
+                    "intended_use": "copy-and-replace-provider-template",
+                    "side_effect_boundary": "metadata-only-by-default",
+                },
+            ).model_dump(mode="json")
+        )
+
+        self.assertEqual(readiness["status"], "metadata-incomplete")
+        self.assertIn("production_provider_replacement", readiness["missing_metadata"])
 
     def test_capability_compatibility_flags_invalid_breakpoint_combo(self) -> None:
         compatibility = validate_browser_provider_capability_compatibility(
@@ -152,6 +376,29 @@ class BrowserProviderSmokeMatrixTests(unittest.TestCase):
         self.assertFalse(compatibility["ok"])
         self.assertEqual(compatibility["status"], "error")
         self.assertIn("breakpoints_require_cdp", {item["code"] for item in compatibility["errors"]})
+        self.assertGreaterEqual(compatibility["rule_count"], 10)
+        self.assertGreaterEqual(compatibility["evaluated_rule_count"], 2)
+
+    def test_new_provider_flags_emit_compatibility_warnings(self) -> None:
+        compatibility = validate_browser_provider_capability_compatibility(
+            BrowserProviderCapabilities(
+                provider_id="thin-stealth-service",
+                display_name="Thin Stealth Service",
+                supports_connect=True,
+                supports_proxy=True,
+                supports_humanize=True,
+                supports_mobile_emulation=True,
+                supports_extensions=True,
+            ).model_dump(mode="json")
+        )
+
+        self.assertTrue(compatibility["ok"])
+        self.assertEqual(compatibility["status"], "warning")
+        warning_codes = {item["code"] for item in compatibility["warnings"]}
+        self.assertIn("humanize_requires_page_control_transport", warning_codes)
+        self.assertIn("mobile_emulation_requires_page_control_transport", warning_codes)
+        self.assertIn("extensions_require_launch_or_persistent_context", warning_codes)
+        self.assertIn("proxy_requires_launch_or_managed_browser", warning_codes)
 
     def test_metadata_matrix_marks_incompatible_provider_not_ok(self) -> None:
         metadata = [

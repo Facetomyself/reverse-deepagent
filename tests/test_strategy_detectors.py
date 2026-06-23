@@ -106,8 +106,11 @@ class StrategyDetectorTests(unittest.TestCase):
                 self.assertEqual(strategy["template"], expected_template)
                 self.assertIn("confidence", strategy)
                 self.assertIn("confidence_score", strategy)
+                self.assertIn("evidence_score", strategy)
                 self.assertGreater(strategy["confidence_score"]["score"], 0)
+                self.assertGreaterEqual(strategy["evidence_score"]["score"], 0)
                 self.assertEqual(strategy["confidence_score"]["label"], strategy["confidence"])
+                self.assertTrue(strategy["evidence_score"]["side_effect_policy"]["score_only"])
 
     def test_unsupported_strategy_is_explicit(self) -> None:
         strategy = detect_algorithm_strategy("function buildSign() { return window.someVm.run(); }")
@@ -116,6 +119,8 @@ class StrategyDetectorTests(unittest.TestCase):
         self.assertEqual(strategy["confidence"], "low")
         self.assertLessEqual(strategy["confidence_score"]["score"], 0.2)
         self.assertIn("manual port or runtime-backed execution required", strategy["confidence_score"]["caveats"])
+        self.assertEqual(strategy["evidence_score"]["label"], "runtime_assisted_required")
+        self.assertIn("strategy_not_supported", strategy["evidence_score"]["blockers"])
 
     def test_confidence_score_records_caveats_for_dynamic_hmac_secret(self) -> None:
         strategy = detect_algorithm_strategy(
@@ -205,6 +210,37 @@ class StrategyDetectorTests(unittest.TestCase):
 }"""
         )
         self.assertEqual(strategy["id"], "sha256_keyword_timestamp")
+
+
+    def test_protected_flow_triage_emits_plan_only_hook_plan(self) -> None:
+        source = """
+async function buildSign(keyword, timestamp) {
+  const wasm = await WebAssembly.instantiateStreaming(fetch('/sign.wasm'), {});
+  const opcode = wasm.instance.exports.opcode_for('sign');
+  switch (opcode) { case 1: debugger; return wasm.instance.exports.sign(keyword, timestamp); }
+}
+"""
+        strategy = detect_algorithm_strategy(source)
+
+        self.assertEqual(strategy["id"], "triage_wasm_vm_obfuscation")
+        plan = strategy["triage_hook_plan"]
+        self.assertEqual(plan["status"], "planned")
+        self.assertIn("wasm", plan["categories"])
+        self.assertIn("vm", plan["categories"])
+        self.assertIn("anti_debug", plan["categories"])
+        plan_ids = {item["plan_id"] for item in plan["hook_plans"]}
+        self.assertIn("wasm-instantiation-observe", plan_ids)
+        self.assertIn("vm-dispatcher-candidate-observe", plan_ids)
+        self.assertIn("anti-debug-observe", plan_ids)
+        artifact_keys = {item["artifact_key"] for item in plan["runtime_artifacts"]}
+        self.assertIn("workspace/protection-triage-hooks.json", artifact_keys)
+        self.assertIn("workspace/wasm-runtime-candidates.json", artifact_keys)
+        self.assertIn("workspace/vm-dispatcher-candidates.json", artifact_keys)
+        self.assertTrue(plan["side_effect_policy"]["plan_only"])
+        self.assertFalse(plan["side_effect_policy"]["installs_hooks"])
+        self.assertFalse(plan["side_effect_policy"]["patches_runtime"])
+        self.assertFalse(plan["side_effect_policy"]["starts_browser"])
+        self.assertFalse(plan["side_effect_policy"]["calls_mcp"])
 
     def test_wasm_only_triggers_wasm_triage(self) -> None:
         strategy = detect_algorithm_strategy(
