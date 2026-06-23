@@ -2,11 +2,12 @@ import hashlib
 import json
 import unittest
 
+from reverse_deepagent.browser.source_map_fetch import SourceMapFetchManager, SourceMapFetchSpec
+from reverse_deepagent.browser.source_map_readiness import SourceMapReadinessManager, SourceMapReadinessSpec
+from reverse_deepagent.browser.source_map_remapper import SourceMapRemapper
 from reverse_deepagent.browser.source_maps import (
     BundlerSymbolScopeManager,
     BundlerSymbolScopeSpec,
-    SourceMapFetchManager,
-    SourceMapFetchSpec,
     SourceMapLookupManager,
     SourceMapLookupSpec,
     SourceMapConsumerActionPlanManager,
@@ -65,11 +66,8 @@ from reverse_deepagent.browser.source_maps import (
     SourceMapSelectedExecutorInputReviewSpec,
     SourceMapTypedPayloadPreflightManager,
     SourceMapTypedPayloadPreflightSpec,
-    SourceMapReadinessManager,
-    SourceMapReadinessSpec,
     SourceMapSourceContentManager,
     SourceMapSourceContentSpec,
-    SourceMapRemapper,
 )
 
 

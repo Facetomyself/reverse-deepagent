@@ -256,9 +256,9 @@ from reverse_deepagent.browser.hooks import (
     SourceLogpointManager,
     SourceLogpointSpec,
 )
+from reverse_deepagent.browser.source_map_fetch import SourceMapFetchManager, SourceMapFetchSpec
+from reverse_deepagent.browser.source_map_readiness import SourceMapReadinessManager, SourceMapReadinessSpec
 from reverse_deepagent.browser.source_maps import (
-    SourceMapFetchManager,
-    SourceMapFetchSpec,
     SourceMapConsumerActionPlanManager,
     SourceMapConsumerActionPlanSpec,
     SourceMapConsumerMaterializationManager,
@@ -313,8 +313,6 @@ from reverse_deepagent.browser.source_maps import (
     SourceMapSelectedExecutorInputReviewSpec,
     SourceMapTypedPayloadPreflightManager,
     SourceMapTypedPayloadPreflightSpec,
-    SourceMapReadinessManager,
-    SourceMapReadinessSpec,
 )
 from reverse_deepagent.rebuild import write_rebuild_bundle
 from reverse_deepagent.runtime.base import BrowserSessionInfo, RuntimeBackendCapabilities, RuntimeExportBundle, WebReverseRuntime

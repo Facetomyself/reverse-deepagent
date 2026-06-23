@@ -6,7 +6,7 @@ from typing import Any
 
 from reverse_deepagent.browser.base import BrowserPage
 from reverse_deepagent.browser.hooks.breakpoints import BreakpointManager, BreakpointSpec
-from reverse_deepagent.browser.source_maps import SourceMapRemapper
+from reverse_deepagent.browser.source_map_remapper import SourceMapRemapper
 
 
 @dataclass(slots=True)

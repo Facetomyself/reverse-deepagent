@@ -13,6 +13,8 @@ from reverse_deepagent.browser.hooks import (
     SourceLogpointManager,
     SourceLogpointSpec,
 )
+from reverse_deepagent.browser.source_map_fetch import SourceMapFetchManager, SourceMapFetchSpec
+from reverse_deepagent.browser.source_map_readiness import SourceMapReadinessManager, SourceMapReadinessSpec
 from reverse_deepagent.browser.source_maps import (
     BundlerSymbolScopeManager,
     BundlerSymbolScopeSpec,
@@ -42,8 +44,6 @@ from reverse_deepagent.browser.source_maps import (
     SourceMapHookCandidateSelectionSpec,
     SourceMapLookupManager,
     SourceMapLookupSpec,
-    SourceMapReadinessManager,
-    SourceMapReadinessSpec,
     SourceMapSelectedExecutorApplicationHandoffManager,
     SourceMapSelectedExecutorApplicationHandoffSpec,
     SourceMapSelectedExecutorApplyPreflightManager,
@@ -76,8 +76,6 @@ from reverse_deepagent.browser.source_maps import (
     SourceMapFollowthroughDispatchApprovalPlanSpec,
     SourceMapFollowthroughDispatcherManager,
     SourceMapFollowthroughDispatcherResultSpec,
-    SourceMapFetchManager,
-    SourceMapFetchSpec,
 )
 from reverse_deepagent.rebuild import write_rebuild_bundle
 from reverse_deepagent.schemas import (

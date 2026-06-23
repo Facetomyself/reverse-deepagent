@@ -229,7 +229,7 @@ class BreakpointResult:
         }
 
 
-from reverse_deepagent.browser.hooks.paused_session import (
+from reverse_deepagent.browser.hooks.paused_session_live import (
     PausedSessionActionSpec,
     PausedSessionLiveContinuationPreflightManager,
 )

@@ -25,8 +25,6 @@ from reverse_deepagent.tools.artifact_tools import (
     make_execute_workspace_foldered_canonical_legacy_fallback_tightening_tool,
     make_execute_workspace_foldered_canonical_migration_finalization_tool,
     make_execute_workspace_foldered_canonical_physical_apply_tool,
-    make_assess_workspace_consumer_readiness_score_tool,
-    make_assess_workspace_migration_readiness_tool,
     make_audit_workspace_artifact_consumers_tool,
     make_plan_workspace_foldered_canonical_migration_pilot_tool,
     make_plan_workspace_foldered_canonical_migration_apply_tool,
@@ -48,14 +46,20 @@ from reverse_deepagent.tools.artifact_tools import (
     make_record_workspace_foldered_canonical_broader_rollout_decision_tool,
     make_review_workspace_foldered_canonical_migration_finalization_preflight_tool,
     make_review_workspace_foldered_canonical_migration_finalization_readiness_tool,
-    make_plan_workspace_dual_write_expansion_tool,
-    make_plan_workspace_dual_write_pilot_tool,
-    make_record_workspace_dual_write_expansion_result_tool,
-    make_record_workspace_dual_write_pilot_result_tool,
     make_record_workspace_foldered_canonical_migration_post_apply_validation_result_tool,
     make_review_workspace_foldered_canonical_legacy_fallback_tightening_readiness_tool,
-    make_review_workspace_dual_write_expansion_workflow_tool,
     make_read_workspace_artifact_tool,
+)
+from reverse_deepagent.tools.workspace_migration_readiness import (
+    make_assess_workspace_consumer_readiness_score_tool,
+    make_assess_workspace_migration_readiness_tool,
+    make_plan_workspace_dual_write_expansion_tool,
+    make_record_workspace_dual_write_expansion_result_tool,
+    make_review_workspace_dual_write_expansion_workflow_tool,
+)
+from reverse_deepagent.tools.workspace_dual_write_pilot import (
+    make_plan_workspace_dual_write_pilot_tool,
+    make_record_workspace_dual_write_pilot_result_tool,
     make_review_workspace_dual_write_pilot_workflow_tool,
 )
 from reverse_deepagent.tools.rebuild_tools import make_build_rebuild_delivery_tool
