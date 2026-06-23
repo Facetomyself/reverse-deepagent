@@ -253,9 +253,31 @@ class InternalRegistryExternalDeliveryProvider:
 
 
 def create_internal_registry_external_delivery_provider(**kwargs: Any) -> InternalRegistryExternalDeliveryProvider:
-    global _FACTORY_INVOCATION_COUNT
+    """Factory used by ExternalDeliveryProviderRegistry.
+
+    Registry metadata listing must not call this function. Tests track factory
+    invocations to keep the entry-point side-effect boundary explicit.
+    """
+
+    global _FACTORY_INVOCATION_COUNT  # noqa: PLW0603
     _FACTORY_INVOCATION_COUNT += 1
-    return InternalRegistryExternalDeliveryProvider(**kwargs)
+    return InternalRegistryExternalDeliveryProvider(
+        registry_endpoint_url=kwargs.get("registry_endpoint_url"),
+        namespace=kwargs.get("namespace"),
+        project=kwargs.get("project"),
+        repository=kwargs.get("repository"),
+        package_name=kwargs.get("package_name"),
+        package_version=kwargs.get("package_version"),
+        publication_contract=kwargs.get("publication_contract", "reviewed-json-package"),
+        method=kwargs.get("method", "POST"),
+        content_type=kwargs.get("content_type", "application/json"),
+        headers=kwargs.get("headers", {}),
+        auth_token=kwargs.get("auth_token"),
+        timeout_seconds=kwargs.get("timeout_seconds", 10.0),
+        approve_internal_registry_delivery=bool(kwargs.get("approve_internal_registry_delivery", False)),
+        http_requester=kwargs.get("http_requester"),
+        provider_id=kwargs.get("provider_id", INTERNAL_REGISTRY_EXTERNAL_DELIVERY_PROVIDER_ID),
+    )
 
 
 def external_delivery_provider_registration() -> ExternalDeliveryProviderRegistration:
@@ -287,7 +309,7 @@ def external_delivery_provider_registration() -> ExternalDeliveryProviderRegistr
                 "records_raw_path_components": False,
             },
         ),
-        factory=lambda **kwargs: create_internal_registry_external_delivery_provider(**kwargs),
+        factory=create_internal_registry_external_delivery_provider,
     )
 
 
