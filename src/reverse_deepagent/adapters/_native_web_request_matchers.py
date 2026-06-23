@@ -2559,6 +2559,17 @@ class _NativeWebRequestMatchers:
             "source_map_followthrough_dispatcher_preflight",
             "sourceMapFollowthroughDispatcherPreflight",
         )
+        # Followthrough dispatcher result requests use the same context keys
+        # but should not be intercepted here -- they are handled by gateway_e.
+        if protection_name in {
+            "source-map-followthrough-dispatcher-result",
+            "source-map-followthrough-dispatcher-mvp",
+            "source-map-followthrough-dispatch-next-action",
+            "execute-source-map-followthrough-dispatcher-mvp",
+            "review-source-map-followthrough-dispatcher-mvp",
+        }:
+            return False
+
         return protection_name in names or any(bool(context.get(key)) for key in context_keys)
     @staticmethod
     def _is_source_map_followthrough_dispatcher_handoff_request(protection_name: str, context: dict[str, Any]) -> bool:
@@ -2765,6 +2776,54 @@ class _NativeWebRequestMatchers:
             "review-selected-source-map-executor-apply-preflight",
         }:
             return True
+        # Explicit application branches in gateway_e use the same context keys but
+        # should not be intercepted here -- they are handled by gateway_e instead.
+        if normalized in {
+            "source-map-debugger-application",
+            "source-map-debugger-location-application",
+            "source-map-debugger-execution-result",
+            "source-map-selected-debugger-application",
+            "source-map-selected-debugger-executor-application",
+            "apply-source-map-debugger-location",
+            "execute-reviewed-source-map-debugger-location-action",
+            "source-map-hook-application",
+            "source-map-hook-install",
+            "source-map-hook-install-result",
+            "source-map-selected-hook-application",
+            "source-map-selected-hook-executor-application",
+            "apply-source-map-hook",
+            "install-reviewed-source-map-hook-symbol-scope",
+            "source-map-rebuild-application",
+            "source-map-rebuild-metadata-application",
+            "source-map-rebuild-result",
+            "source-map-selected-rebuild-application",
+            "source-map-selected-rebuild-executor-application",
+            "apply-source-map-rebuild-metadata",
+            "run-reviewed-source-map-rebuild-metadata-generation",
+            "source-map-rebuild-generation",
+            "source-map-rebuild-bundle-generation",
+            "source-map-rebuild-generation-result",
+            "source-map-selected-rebuild-generation",
+            "source-map-selected-rebuild-generation-executor",
+            "generate-reviewed-source-map-rebuild-bundle",
+            "run-reviewed-source-map-rebuild-generation",
+            "source-map-source-logpoint-application",
+            "source-map-source-logpoint-install",
+            "source-map-selected-source-logpoint-application",
+            "source-map-selected-source-logpoint-executor-application",
+            "apply-source-map-source-logpoint",
+            "install-reviewed-source-map-source-logpoint",
+            "source-map-followthrough-dispatcher-result",
+            "source-map-followthrough-dispatcher-mvp",
+            "source-map-followthrough-dispatch-next-action",
+            "execute-source-map-followthrough-dispatcher-mvp",
+            "review-source-map-followthrough-dispatcher-mvp",
+            "source-map-fetch",
+            "fetch-source-map",
+            "source-map-url",
+        }:
+            return False
+
         return any(
             key in context
             for key in (
