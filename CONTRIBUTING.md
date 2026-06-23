@@ -28,12 +28,12 @@ Do not commit generated runtime artifacts. The following paths are intentionally
 
 ## Chrome debug lifecycle
 
-When testing MCP-backed Web recon, first read [`docs/runtime/jsreverser-mcp-setup.md`](docs/runtime/jsreverser-mcp-setup.md). For self-hosted GitHub Actions smoke runs, also read [`docs/ci/self-hosted-mcp-smoke.md`](docs/ci/self-hosted-mcp-smoke.md). Prefer the managed launcher instead of assuming port `9222` is already open:
+When testing legacy MCP-backed Web recon, first read [`docs/runtime/jsreverser-mcp-setup.md`](docs/runtime/jsreverser-mcp-setup.md). For self-hosted GitHub Actions smoke runs, also read [`docs/ci/self-hosted-mcp-smoke.md`](docs/ci/self-hosted-mcp-smoke.md). Prefer the managed launcher instead of assuming port `9222` is already open. New commands should use `legacy-mcp`; `mcp` and `jsreverser-mcp` remain deprecated compatibility aliases only:
 
 ```bash
 reverse-agent-fixture-smoke \
   --profile context-navigator \
-  --runtime mcp \
+  --runtime legacy-mcp \
   --ensure-chrome \
   --chrome-debug-port 9461 \
   --chrome-user-data-dir "/tmp/reverse-agent-chrome-9461"

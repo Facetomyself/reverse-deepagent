@@ -8,9 +8,12 @@
 | B | `rollout15-b5-internal-registry` | B-5: internal-registry `**kwargs` → 显式字段 | ✅ |
 | Fix | `rollout15-source-dispatch-s5` | gateway_e matcher 排除集修复 | ✅ 13→0 failures |
 
-全部已合并到 `main`（`78478d55`）。
+更正（2026-06-23 code review follow-up）：原文曾写“全部已合并到 `main`”，但 Git DAG 复核发现 S5 两个提交尚未进入 `origin/main@79925731`。本修复分支 `codex/review-fix-rollout15-s5-merge` 已补入 S5 提交 `7c60410e` / `9efd7503`，合并本分支后 `main` 才满足本节闭合口径。
 
 ## 二、核心指标总览
+
+以下指标以本修复分支补齐 S5 后的代码为准；若只查看 `origin/main@79925731`，`native_web.py` 仍为 11837 行且 gateway E 尚未合入。
+
 
 ### 文件瘦身
 
@@ -87,14 +90,15 @@ OK (skipped=2)
 
 ## 六、已知遗留
 
-1. **Security review**：`approve_internal_registry_delivery=bool(kwargs.get(...))` 需改为字符串安全解析（非纯 `bool()` 转换）
-2. **Worktree 清理**：`.claude/worktrees/` 下有残留目录，但已加入 `.gitignore`
-3. **Platform Expansion**：Android/iOS/小程序按用户指示不做
+1. **Worktree 清理**：`.claude/worktrees/` 下有残留目录，但已加入 `.gitignore`
+2. **Platform Expansion**：Android/iOS/小程序按用户指示不做
+
+已更正：`approve_internal_registry_delivery=bool(kwargs.get(...))` 遗留项已由 `rollout15-b5-internal-registry` 修复为字符串白名单解析，不能继续列为待修安全项。
 
 ## 七、部署状态
 
 ```
-origin/main: 78478d55 (最新)
+origin/main: 79925731（code review 时的远端基线；本修复分支补齐 S5 后需再次合并/推送）
 origin/refactor/consolidate-hooks-native-web: 已推送
 所有变更已推送到 https://github.com/Facetomyself/reverse-deepagent
 ```
