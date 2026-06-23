@@ -1,7 +1,5 @@
-"""Paused session domain modules -- re-exported by lifecycle domain."""
-
+"""Paused session domain modules — re-exported by lifecycle domain."""
 from __future__ import annotations
-
 from reverse_deepagent.browser.hooks.paused_session_live import (
     PausedSessionActionSpec,
     PausedSessionLiveContinuationPreflightSpec,
@@ -52,6 +50,9 @@ from reverse_deepagent.browser.hooks.paused_session_loop import (
     PausedSessionMultiStepLoopPlanSpec,
     PausedSessionMultiStepLoopPlanResult,
     PausedSessionMultiStepLoopPlanManager,
+    PausedSessionMultiStepLoopExecutionSpec,
+    PausedSessionMultiStepLoopExecutionResult,
+    PausedSessionMultiStepLoopExecutionManager,
     PausedSessionAutomaticLoopReadinessSpec,
     PausedSessionAutomaticLoopReadinessResult,
     PausedSessionAutomaticLoopReadinessManager,
@@ -64,9 +65,6 @@ from reverse_deepagent.browser.hooks.paused_session_loop import (
     PausedSessionAutomaticLoopExecutorApprovalPlanSpec,
     PausedSessionAutomaticLoopExecutorApprovalPlanResult,
     PausedSessionAutomaticLoopExecutorApprovalPlanManager,
-    PausedSessionMultiStepLoopExecutionSpec,
-    PausedSessionMultiStepLoopExecutionResult,
-    PausedSessionMultiStepLoopExecutionManager,
     PausedSessionAutomaticLoopExecutionSpec,
     PausedSessionAutomaticLoopExecutionResult,
     PausedSessionAutomaticLoopExecutionManager,
@@ -155,6 +153,9 @@ __all__ = [
     "PausedSessionMultiStepLoopPlanSpec",
     "PausedSessionMultiStepLoopPlanResult",
     "PausedSessionMultiStepLoopPlanManager",
+    "PausedSessionMultiStepLoopExecutionSpec",
+    "PausedSessionMultiStepLoopExecutionResult",
+    "PausedSessionMultiStepLoopExecutionManager",
     "PausedSessionAutomaticLoopReadinessSpec",
     "PausedSessionAutomaticLoopReadinessResult",
     "PausedSessionAutomaticLoopReadinessManager",
@@ -167,9 +168,6 @@ __all__ = [
     "PausedSessionAutomaticLoopExecutorApprovalPlanSpec",
     "PausedSessionAutomaticLoopExecutorApprovalPlanResult",
     "PausedSessionAutomaticLoopExecutorApprovalPlanManager",
-    "PausedSessionMultiStepLoopExecutionSpec",
-    "PausedSessionMultiStepLoopExecutionResult",
-    "PausedSessionMultiStepLoopExecutionManager",
     "PausedSessionAutomaticLoopExecutionSpec",
     "PausedSessionAutomaticLoopExecutionResult",
     "PausedSessionAutomaticLoopExecutionManager",
