@@ -1,351 +1,356 @@
-"""Domain-based matchers package for NativeWebRuntime request classification."""
 from __future__ import annotations
 
 from typing import Any
 
-# Import all predicate functions from domain modules
-# flake8: noqa: F401, F403 -- re-export all for backward compat
-
-from .closure import (
-    _is_closure_scope_discovery_request,
-    _is_closure_wrapper_continuation_next_iteration_execution_request,
-    _is_closure_wrapper_continuation_execution_plan_request,
-    _is_closure_wrapper_continuation_execution_request,
-    _is_closure_wrapper_continuation_next_iteration_plan_request,
-    _is_closure_wrapper_continuation_checkpoint_request,
-    _is_closure_wrapper_continuation_readiness_request,
-    _is_closure_wrapper_replacement_plan_request,
-    _is_closure_wrapper_replacement_execution_request,
-    _is_closure_wrapper_restore_execution_request,
-    _is_closure_wrapper_event_harvest_request,
-    _is_closure_wrapper_assignment_safety_request,
-    _is_closure_wrapper_runtime_mutability_result_request,
-    _is_closure_wrapper_runtime_mutability_preflight_request,
+from reverse_deepagent.adapters.matchers.source_map import (
+    _is_source_map_consumer_action_plan_request,
+    _is_source_map_consumer_materialization_request,
+    _is_source_map_debugger_application_request,
+    _is_source_map_debugger_candidate_review_request,
+    _is_source_map_debugger_candidate_selection_request,
+    _is_source_map_fetch_request,
+    _is_source_map_followthrough_chain_readiness_request,
+    _is_source_map_followthrough_completion_checkpoint_request,
+    _is_source_map_followthrough_dispatch_approval_plan_request,
+    _is_source_map_followthrough_dispatch_bounded_executor_gate_request,
+    _is_source_map_followthrough_dispatch_preflight_request,
+    _is_source_map_followthrough_dispatch_transaction_preflight_request,
+    _is_source_map_followthrough_dispatcher_apply_preflight_request,
+    _is_source_map_followthrough_dispatcher_handoff_request,
+    _is_source_map_followthrough_dispatcher_result_request,
+    _is_source_map_followthrough_one_step_plan_request,
+    _is_source_map_followthrough_review_request,
+    _is_source_map_followthrough_surface_selection_request,
+    _is_source_map_hook_application_request,
+    _is_source_map_hook_candidate_refinement_request,
+    _is_source_map_hook_candidate_selection_request,
+    _is_source_map_lookup_request,
+    _is_source_map_readiness_request,
+    _is_source_map_rebuild_generation_request,
+    _is_source_map_rebuild_metadata_application_request,
+    _is_source_map_selected_executor_application_handoff_request,
+    _is_source_map_selected_executor_apply_preflight_request,
+    _is_source_map_selected_executor_approval_plan_request,
+    _is_source_map_selected_executor_input_review_request,
+    _is_source_map_selected_executor_result_checkpoint_request,
+    _is_source_map_source_content_request,
+    _is_source_map_source_logpoint_application_request,
+    _is_source_map_terminal_review_closure_checkpoint_request,
+    _is_source_map_terminal_review_final_audit_request,
+    _is_source_map_terminal_review_package_request,
+    _is_source_map_typed_payload_preflight_request,
 )
 
-from .heap import (
+from reverse_deepagent.adapters.matchers.heap import (
     _is_heap_snapshot_automatic_followup_plan_request,
-    _is_heap_snapshot_retained_size_proof_plan_request,
-    _is_heap_snapshot_path_to_root_proof_plan_request,
-    _is_heap_snapshot_raw_heap_constructor_drilldown_proof_plan_request,
-    _is_heap_snapshot_path_to_root_executor_request,
-    _is_heap_snapshot_retained_size_executor_request,
-    _is_heap_snapshot_retained_size_approval_plan_request,
-    _is_heap_snapshot_retained_size_bounded_gate_request,
-    _is_heap_snapshot_retained_size_transaction_preflight_request,
-    _is_heap_snapshot_retained_size_input_review_request,
-    _is_heap_snapshot_retained_path_preflight_request,
+    _is_heap_snapshot_collect_request,
     _is_heap_snapshot_constructor_growth_drilldown_execution_request,
     _is_heap_snapshot_constructor_growth_drilldown_request,
-    _is_heap_snapshot_diff_selected_analysis_input_preflight_request,
-    _is_heap_snapshot_diff_followup_checkpoint_request,
-    _is_heap_snapshot_diff_executor_request,
-    _is_heap_snapshot_readiness_request,
-    _is_heap_snapshot_collect_request,
-    _is_heap_snapshot_diff_readiness_request,
-    _is_heap_snapshot_diff_executor_bounded_gate_request,
-    _is_heap_snapshot_diff_executor_transaction_preflight_request,
     _is_heap_snapshot_diff_executor_approval_plan_request,
+    _is_heap_snapshot_diff_executor_bounded_gate_request,
     _is_heap_snapshot_diff_executor_preflight_request,
+    _is_heap_snapshot_diff_executor_request,
+    _is_heap_snapshot_diff_executor_transaction_preflight_request,
+    _is_heap_snapshot_diff_followup_checkpoint_request,
+    _is_heap_snapshot_diff_readiness_request,
+    _is_heap_snapshot_diff_selected_analysis_input_preflight_request,
+    _is_heap_snapshot_path_to_root_executor_request,
+    _is_heap_snapshot_path_to_root_proof_plan_request,
+    _is_heap_snapshot_raw_heap_constructor_drilldown_proof_plan_request,
+    _is_heap_snapshot_readiness_request,
+    _is_heap_snapshot_retained_path_preflight_request,
+    _is_heap_snapshot_retained_size_approval_plan_request,
+    _is_heap_snapshot_retained_size_bounded_gate_request,
+    _is_heap_snapshot_retained_size_executor_request,
+    _is_heap_snapshot_retained_size_input_review_request,
+    _is_heap_snapshot_retained_size_proof_plan_request,
+    _is_heap_snapshot_retained_size_transaction_preflight_request,
 )
 
-from .module import (
-    _is_module_discovery_request,
-    _is_module_federation_traversal_workflow_execution_request,
-    _is_module_federation_recursive_traversal_plan_request,
-    _is_module_federation_recursive_traversal_followup_request,
-    _is_module_federation_recursive_continuation_journal_request,
-    _is_recursive_continuation_readiness_request,
-    _is_module_federation_recursive_continuation_checkpoint_request,
-    _is_module_federation_recursive_traversal_execution_request,
-    _is_module_federation_traversal_graph_request,
-    _is_module_federation_traversal_workflow_plan_request,
-    _is_module_federation_get_init_request,
-    _is_module_federation_get_init_probe_request,
-    _is_module_federation_factory_invoke_request,
-    _is_module_federation_export_hook_install_request,
-    _is_module_federation_export_hook_plan_request,
-    _is_custom_loader_execution_request,
-    _is_custom_loader_continuation_workflow_request,
-    _is_custom_loader_continuation_execution_request,
-    _is_custom_loader_traversal_workflow_execution_request,
-    _is_custom_loader_traversal_loop_plan_request,
-    _is_custom_loader_recursive_traversal_plan_request,
-    _is_custom_loader_recursive_traversal_execution_request,
-    _is_custom_loader_recursive_traversal_followup_request,
-    _is_custom_loader_traversal_loop_execution_request,
-    _is_custom_loader_traversal_workflow_plan_request,
-    _is_custom_loader_traversal_graph_request,
-    _is_custom_loader_continuation_journal_request,
-    _is_custom_loader_execution_preflight_request,
-    _is_custom_loader_traversal_request,
-    _is_async_chunk_traversal_graph_request,
-    _is_async_chunk_recursive_traversal_plan_request,
-    _is_async_chunk_recursive_traversal_execution_request,
-    _is_async_chunk_recursive_traversal_followup_request,
-    _is_async_chunk_traversal_loop_plan_request,
-    _is_async_chunk_traversal_loop_execution_request,
-    _is_async_chunk_traversal_workflow_execution_request,
-    _is_async_chunk_traversal_workflow_plan_request,
-    _is_async_chunk_load_request,
-    _is_async_chunk_module_hook_request,
-    _is_custom_loader_module_hook_request,
-    _is_async_chunk_module_diff_request,
-    _is_custom_loader_module_diff_request,
-    _is_function_hook_request,
-    _is_module_hook_request,
-)
-
-from .object_graph import (
-    _is_object_graph_diff_request,
-    _is_runtime_object_graph_diff_request,
-    _is_object_root_mutation_audit_request,
-    _is_page_mutation_audit_request,
-    _is_flow_timeline_request,
-    _is_mutation_observer_timeline_request,
-)
-
-from .paused_session import (
-    _is_breakpoint_request,
-    _is_paused_session_request,
-    _is_paused_session_automatic_loop_followup_checkpoint_request,
-    _is_paused_session_automatic_loop_next_iteration_followup_checkpoint_request,
-    _is_paused_session_automatic_loop_multi_iteration_executor_approval_plan_request,
-    _is_paused_session_automatic_loop_multi_iteration_execution_request,
-    _is_paused_session_automatic_loop_multi_iteration_followup_checkpoint_request,
-    _is_paused_session_automatic_loop_multi_iteration_next_step_plan_request,
-    _is_paused_session_automatic_loop_multi_iteration_executor_input_preflight_request,
-    _is_paused_session_automatic_loop_multi_iteration_execution_plan_request,
-    _is_paused_session_automatic_loop_multi_iteration_executor_preflight_request,
-    _is_paused_session_automatic_loop_multi_iteration_policy_request,
-    _is_paused_session_automatic_loop_following_iteration_plan_request,
-    _is_paused_session_automatic_loop_next_iteration_execution_request,
-    _is_paused_session_automatic_loop_next_iteration_plan_request,
+from reverse_deepagent.adapters.matchers.paused_session import (
+    _is_paused_session_automatic_loop_execution_plan_request,
     _is_paused_session_automatic_loop_execution_request,
     _is_paused_session_automatic_loop_executor_approval_plan_request,
     _is_paused_session_automatic_loop_executor_preflight_request,
-    _is_paused_session_automatic_loop_execution_plan_request,
+    _is_paused_session_automatic_loop_following_iteration_plan_request,
+    _is_paused_session_automatic_loop_followup_checkpoint_request,
+    _is_paused_session_automatic_loop_multi_iteration_execution_plan_request,
+    _is_paused_session_automatic_loop_multi_iteration_execution_request,
+    _is_paused_session_automatic_loop_multi_iteration_executor_approval_plan_request,
+    _is_paused_session_automatic_loop_multi_iteration_executor_input_preflight_request,
+    _is_paused_session_automatic_loop_multi_iteration_executor_preflight_request,
+    _is_paused_session_automatic_loop_multi_iteration_followup_checkpoint_request,
+    _is_paused_session_automatic_loop_multi_iteration_next_step_plan_request,
+    _is_paused_session_automatic_loop_multi_iteration_policy_request,
+    _is_paused_session_automatic_loop_next_iteration_execution_request,
+    _is_paused_session_automatic_loop_next_iteration_followup_checkpoint_request,
+    _is_paused_session_automatic_loop_next_iteration_plan_request,
     _is_paused_session_automatic_loop_readiness_request,
-    _is_paused_session_multi_step_loop_execution_request,
-    _is_paused_session_multi_step_loop_plan_request,
+    _is_paused_session_cross_process_attach_probe_request,
+    _is_paused_session_cross_process_continuation_checkpoint_request,
+    _is_paused_session_cross_process_execution_plan_request,
+    _is_paused_session_cross_process_one_action_request,
     _is_paused_session_cross_process_session_lifecycle_request,
+    _is_paused_session_live_callframe_recovery_request,
+    _is_paused_session_live_continuation_preflight_request,
     _is_paused_session_multi_step_continuation_execution_request,
     _is_paused_session_multi_step_continuation_workflow_request,
-    _is_paused_session_pre_action_subscribe_and_action_request,
-    _is_paused_session_cross_process_continuation_checkpoint_request,
+    _is_paused_session_multi_step_loop_execution_request,
+    _is_paused_session_multi_step_loop_plan_request,
     _is_paused_session_next_paused_event_capture_execution_request,
     _is_paused_session_next_paused_event_capture_plan_request,
-    _is_paused_session_cross_process_one_action_request,
-    _is_paused_session_live_callframe_recovery_request,
-    _is_paused_session_cross_process_attach_probe_request,
-    _is_paused_session_cross_process_execution_plan_request,
-    _is_paused_session_live_continuation_preflight_request,
+    _is_paused_session_pre_action_subscribe_and_action_request,
+    _is_paused_session_request,
     _is_paused_session_target_attach_readiness_request,
 )
 
-from .source_map import (
-    _is_source_map_fetch_request,
-    _is_source_map_lookup_request,
-    _is_source_map_source_content_request,
-    _is_source_map_typed_payload_preflight_request,
-    _is_source_map_followthrough_dispatcher_result_request,
-    _is_source_map_followthrough_dispatcher_apply_preflight_request,
-    _is_source_map_followthrough_dispatcher_handoff_request,
-    _is_source_map_followthrough_dispatch_bounded_executor_gate_request,
-    _is_source_map_followthrough_dispatch_transaction_preflight_request,
-    _is_source_map_followthrough_dispatch_approval_plan_request,
-    _is_source_map_followthrough_dispatch_preflight_request,
-    _is_source_map_followthrough_one_step_plan_request,
-    _is_source_map_followthrough_chain_readiness_request,
-    _is_source_map_followthrough_review_request,
-    _is_source_map_selected_executor_input_review_request,
-    _is_source_map_selected_executor_apply_preflight_request,
-    _is_source_map_selected_executor_application_handoff_request,
-    _is_source_map_terminal_review_package_request,
-    _is_source_map_terminal_review_closure_checkpoint_request,
-    _is_source_map_terminal_review_final_audit_request,
-    _is_source_map_followthrough_completion_checkpoint_request,
-    _is_source_map_selected_executor_result_checkpoint_request,
-    _is_source_map_debugger_application_request,
-    _is_source_map_source_logpoint_application_request,
-    _is_source_map_rebuild_metadata_application_request,
-    _is_source_map_rebuild_generation_request,
-    _is_source_map_hook_application_request,
-    _is_source_map_hook_candidate_selection_request,
-    _is_source_map_hook_candidate_refinement_request,
-    _is_source_map_debugger_candidate_review_request,
-    _is_source_map_debugger_candidate_selection_request,
-    _is_source_map_selected_executor_approval_plan_request,
-    _is_source_map_followthrough_surface_selection_request,
-    _is_source_map_consumer_materialization_request,
-    _is_source_map_consumer_action_plan_request,
-    _is_source_map_readiness_request,
+from reverse_deepagent.adapters.matchers.closure import (
+    _is_closure_scope_discovery_request,
+    _is_closure_wrapper_assignment_safety_request,
+    _is_closure_wrapper_continuation_checkpoint_request,
+    _is_closure_wrapper_continuation_execution_plan_request,
+    _is_closure_wrapper_continuation_execution_request,
+    _is_closure_wrapper_continuation_next_iteration_execution_request,
+    _is_closure_wrapper_continuation_next_iteration_plan_request,
+    _is_closure_wrapper_continuation_readiness_request,
+    _is_closure_wrapper_event_harvest_request,
+    _is_closure_wrapper_replacement_execution_request,
+    _is_closure_wrapper_replacement_plan_request,
+    _is_closure_wrapper_restore_execution_request,
+    _is_closure_wrapper_runtime_mutability_preflight_request,
+    _is_closure_wrapper_runtime_mutability_result_request,
+)
+
+from reverse_deepagent.adapters.matchers.module import (
+    _is_async_chunk_load_request,
+    _is_async_chunk_module_diff_request,
+    _is_async_chunk_module_hook_request,
+    _is_async_chunk_recursive_traversal_execution_request,
+    _is_async_chunk_recursive_traversal_followup_request,
+    _is_async_chunk_recursive_traversal_plan_request,
+    _is_async_chunk_traversal_graph_request,
+    _is_async_chunk_traversal_loop_execution_request,
+    _is_async_chunk_traversal_loop_plan_request,
+    _is_async_chunk_traversal_workflow_execution_request,
+    _is_async_chunk_traversal_workflow_plan_request,
+    _is_custom_loader_continuation_execution_request,
+    _is_custom_loader_continuation_journal_request,
+    _is_custom_loader_continuation_workflow_request,
+    _is_custom_loader_execution_preflight_request,
+    _is_custom_loader_execution_request,
+    _is_custom_loader_module_diff_request,
+    _is_custom_loader_module_hook_request,
+    _is_custom_loader_recursive_traversal_execution_request,
+    _is_custom_loader_recursive_traversal_followup_request,
+    _is_custom_loader_recursive_traversal_plan_request,
+    _is_custom_loader_traversal_graph_request,
+    _is_custom_loader_traversal_loop_execution_request,
+    _is_custom_loader_traversal_loop_plan_request,
+    _is_custom_loader_traversal_request,
+    _is_custom_loader_traversal_workflow_execution_request,
+    _is_custom_loader_traversal_workflow_plan_request,
+    _is_module_federation_export_hook_install_request,
+    _is_module_federation_export_hook_plan_request,
+    _is_module_federation_factory_invoke_request,
+    _is_module_federation_get_init_probe_request,
+    _is_module_federation_get_init_request,
+    _is_module_federation_recursive_continuation_checkpoint_request,
+    _is_module_federation_recursive_continuation_journal_request,
+    _is_module_federation_recursive_traversal_execution_request,
+    _is_module_federation_recursive_traversal_followup_request,
+    _is_module_federation_recursive_traversal_plan_request,
+    _is_module_federation_traversal_graph_request,
+    _is_module_federation_traversal_workflow_execution_request,
+    _is_module_federation_traversal_workflow_plan_request,
+    _is_module_hook_request,
+)
+
+from reverse_deepagent.adapters.matchers.object_graph import (
+    _is_object_graph_diff_request,
+    _is_object_root_mutation_audit_request,
+    _is_page_mutation_audit_request,
+    _is_runtime_object_graph_diff_request,
+)
+
+from reverse_deepagent.adapters.matchers.misc import (
+    _is_breakpoint_request,
     _is_bundler_symbol_scope_request,
+    _is_flow_timeline_request,
+    _is_function_hook_request,
+    _is_module_discovery_request,
+    _is_mutation_observer_timeline_request,
+    _is_recursive_continuation_readiness_request,
     _is_source_logpoint_request,
 )
 
 
 class _NativeWebRequestMatchers:
-    """Backward-compatible mixin: delegates to domain module functions."""
+    """Backward-compatible mixin delegating to domain matcher modules."""
 
-    _is_closure_scope_discovery_request = staticmethod(_is_closure_scope_discovery_request)
-    _is_closure_wrapper_continuation_next_iteration_execution_request = staticmethod(_is_closure_wrapper_continuation_next_iteration_execution_request)
-    _is_closure_wrapper_continuation_execution_plan_request = staticmethod(_is_closure_wrapper_continuation_execution_plan_request)
-    _is_closure_wrapper_continuation_execution_request = staticmethod(_is_closure_wrapper_continuation_execution_request)
-    _is_closure_wrapper_continuation_next_iteration_plan_request = staticmethod(_is_closure_wrapper_continuation_next_iteration_plan_request)
-    _is_closure_wrapper_continuation_checkpoint_request = staticmethod(_is_closure_wrapper_continuation_checkpoint_request)
-    _is_closure_wrapper_continuation_readiness_request = staticmethod(_is_closure_wrapper_continuation_readiness_request)
-    _is_closure_wrapper_replacement_plan_request = staticmethod(_is_closure_wrapper_replacement_plan_request)
-    _is_closure_wrapper_replacement_execution_request = staticmethod(_is_closure_wrapper_replacement_execution_request)
-    _is_closure_wrapper_restore_execution_request = staticmethod(_is_closure_wrapper_restore_execution_request)
-    _is_closure_wrapper_event_harvest_request = staticmethod(_is_closure_wrapper_event_harvest_request)
-    _is_closure_wrapper_assignment_safety_request = staticmethod(_is_closure_wrapper_assignment_safety_request)
-    _is_closure_wrapper_runtime_mutability_result_request = staticmethod(_is_closure_wrapper_runtime_mutability_result_request)
-    _is_closure_wrapper_runtime_mutability_preflight_request = staticmethod(_is_closure_wrapper_runtime_mutability_preflight_request)
+    _is_source_map_consumer_action_plan_request = staticmethod(_is_source_map_consumer_action_plan_request)
+    _is_source_map_consumer_materialization_request = staticmethod(_is_source_map_consumer_materialization_request)
+    _is_source_map_debugger_application_request = staticmethod(_is_source_map_debugger_application_request)
+    _is_source_map_debugger_candidate_review_request = staticmethod(_is_source_map_debugger_candidate_review_request)
+    _is_source_map_debugger_candidate_selection_request = staticmethod(_is_source_map_debugger_candidate_selection_request)
+    _is_source_map_fetch_request = staticmethod(_is_source_map_fetch_request)
+    _is_source_map_followthrough_chain_readiness_request = staticmethod(_is_source_map_followthrough_chain_readiness_request)
+    _is_source_map_followthrough_completion_checkpoint_request = staticmethod(_is_source_map_followthrough_completion_checkpoint_request)
+    _is_source_map_followthrough_dispatch_approval_plan_request = staticmethod(_is_source_map_followthrough_dispatch_approval_plan_request)
+    _is_source_map_followthrough_dispatch_bounded_executor_gate_request = staticmethod(_is_source_map_followthrough_dispatch_bounded_executor_gate_request)
+    _is_source_map_followthrough_dispatch_preflight_request = staticmethod(_is_source_map_followthrough_dispatch_preflight_request)
+    _is_source_map_followthrough_dispatch_transaction_preflight_request = staticmethod(_is_source_map_followthrough_dispatch_transaction_preflight_request)
+    _is_source_map_followthrough_dispatcher_apply_preflight_request = staticmethod(_is_source_map_followthrough_dispatcher_apply_preflight_request)
+    _is_source_map_followthrough_dispatcher_handoff_request = staticmethod(_is_source_map_followthrough_dispatcher_handoff_request)
+    _is_source_map_followthrough_dispatcher_result_request = staticmethod(_is_source_map_followthrough_dispatcher_result_request)
+    _is_source_map_followthrough_one_step_plan_request = staticmethod(_is_source_map_followthrough_one_step_plan_request)
+    _is_source_map_followthrough_review_request = staticmethod(_is_source_map_followthrough_review_request)
+    _is_source_map_followthrough_surface_selection_request = staticmethod(_is_source_map_followthrough_surface_selection_request)
+    _is_source_map_hook_application_request = staticmethod(_is_source_map_hook_application_request)
+    _is_source_map_hook_candidate_refinement_request = staticmethod(_is_source_map_hook_candidate_refinement_request)
+    _is_source_map_hook_candidate_selection_request = staticmethod(_is_source_map_hook_candidate_selection_request)
+    _is_source_map_lookup_request = staticmethod(_is_source_map_lookup_request)
+    _is_source_map_readiness_request = staticmethod(_is_source_map_readiness_request)
+    _is_source_map_rebuild_generation_request = staticmethod(_is_source_map_rebuild_generation_request)
+    _is_source_map_rebuild_metadata_application_request = staticmethod(_is_source_map_rebuild_metadata_application_request)
+    _is_source_map_selected_executor_application_handoff_request = staticmethod(_is_source_map_selected_executor_application_handoff_request)
+    _is_source_map_selected_executor_apply_preflight_request = staticmethod(_is_source_map_selected_executor_apply_preflight_request)
+    _is_source_map_selected_executor_approval_plan_request = staticmethod(_is_source_map_selected_executor_approval_plan_request)
+    _is_source_map_selected_executor_input_review_request = staticmethod(_is_source_map_selected_executor_input_review_request)
+    _is_source_map_selected_executor_result_checkpoint_request = staticmethod(_is_source_map_selected_executor_result_checkpoint_request)
+    _is_source_map_source_content_request = staticmethod(_is_source_map_source_content_request)
+    _is_source_map_source_logpoint_application_request = staticmethod(_is_source_map_source_logpoint_application_request)
+    _is_source_map_terminal_review_closure_checkpoint_request = staticmethod(_is_source_map_terminal_review_closure_checkpoint_request)
+    _is_source_map_terminal_review_final_audit_request = staticmethod(_is_source_map_terminal_review_final_audit_request)
+    _is_source_map_terminal_review_package_request = staticmethod(_is_source_map_terminal_review_package_request)
+    _is_source_map_typed_payload_preflight_request = staticmethod(_is_source_map_typed_payload_preflight_request)
+
     _is_heap_snapshot_automatic_followup_plan_request = staticmethod(_is_heap_snapshot_automatic_followup_plan_request)
-    _is_heap_snapshot_retained_size_proof_plan_request = staticmethod(_is_heap_snapshot_retained_size_proof_plan_request)
-    _is_heap_snapshot_path_to_root_proof_plan_request = staticmethod(_is_heap_snapshot_path_to_root_proof_plan_request)
-    _is_heap_snapshot_raw_heap_constructor_drilldown_proof_plan_request = staticmethod(_is_heap_snapshot_raw_heap_constructor_drilldown_proof_plan_request)
-    _is_heap_snapshot_path_to_root_executor_request = staticmethod(_is_heap_snapshot_path_to_root_executor_request)
-    _is_heap_snapshot_retained_size_executor_request = staticmethod(_is_heap_snapshot_retained_size_executor_request)
-    _is_heap_snapshot_retained_size_approval_plan_request = staticmethod(_is_heap_snapshot_retained_size_approval_plan_request)
-    _is_heap_snapshot_retained_size_bounded_gate_request = staticmethod(_is_heap_snapshot_retained_size_bounded_gate_request)
-    _is_heap_snapshot_retained_size_transaction_preflight_request = staticmethod(_is_heap_snapshot_retained_size_transaction_preflight_request)
-    _is_heap_snapshot_retained_size_input_review_request = staticmethod(_is_heap_snapshot_retained_size_input_review_request)
-    _is_heap_snapshot_retained_path_preflight_request = staticmethod(_is_heap_snapshot_retained_path_preflight_request)
+    _is_heap_snapshot_collect_request = staticmethod(_is_heap_snapshot_collect_request)
     _is_heap_snapshot_constructor_growth_drilldown_execution_request = staticmethod(_is_heap_snapshot_constructor_growth_drilldown_execution_request)
     _is_heap_snapshot_constructor_growth_drilldown_request = staticmethod(_is_heap_snapshot_constructor_growth_drilldown_request)
-    _is_heap_snapshot_diff_selected_analysis_input_preflight_request = staticmethod(_is_heap_snapshot_diff_selected_analysis_input_preflight_request)
-    _is_heap_snapshot_diff_followup_checkpoint_request = staticmethod(_is_heap_snapshot_diff_followup_checkpoint_request)
-    _is_heap_snapshot_diff_executor_request = staticmethod(_is_heap_snapshot_diff_executor_request)
-    _is_heap_snapshot_readiness_request = staticmethod(_is_heap_snapshot_readiness_request)
-    _is_heap_snapshot_collect_request = staticmethod(_is_heap_snapshot_collect_request)
-    _is_heap_snapshot_diff_readiness_request = staticmethod(_is_heap_snapshot_diff_readiness_request)
-    _is_heap_snapshot_diff_executor_bounded_gate_request = staticmethod(_is_heap_snapshot_diff_executor_bounded_gate_request)
-    _is_heap_snapshot_diff_executor_transaction_preflight_request = staticmethod(_is_heap_snapshot_diff_executor_transaction_preflight_request)
     _is_heap_snapshot_diff_executor_approval_plan_request = staticmethod(_is_heap_snapshot_diff_executor_approval_plan_request)
+    _is_heap_snapshot_diff_executor_bounded_gate_request = staticmethod(_is_heap_snapshot_diff_executor_bounded_gate_request)
     _is_heap_snapshot_diff_executor_preflight_request = staticmethod(_is_heap_snapshot_diff_executor_preflight_request)
-    _is_module_discovery_request = staticmethod(_is_module_discovery_request)
-    _is_module_federation_traversal_workflow_execution_request = staticmethod(_is_module_federation_traversal_workflow_execution_request)
-    _is_module_federation_recursive_traversal_plan_request = staticmethod(_is_module_federation_recursive_traversal_plan_request)
-    _is_module_federation_recursive_traversal_followup_request = staticmethod(_is_module_federation_recursive_traversal_followup_request)
-    _is_module_federation_recursive_continuation_journal_request = staticmethod(_is_module_federation_recursive_continuation_journal_request)
-    _is_recursive_continuation_readiness_request = staticmethod(_is_recursive_continuation_readiness_request)
-    _is_module_federation_recursive_continuation_checkpoint_request = staticmethod(_is_module_federation_recursive_continuation_checkpoint_request)
-    _is_module_federation_recursive_traversal_execution_request = staticmethod(_is_module_federation_recursive_traversal_execution_request)
-    _is_module_federation_traversal_graph_request = staticmethod(_is_module_federation_traversal_graph_request)
-    _is_module_federation_traversal_workflow_plan_request = staticmethod(_is_module_federation_traversal_workflow_plan_request)
-    _is_module_federation_get_init_request = staticmethod(_is_module_federation_get_init_request)
-    _is_module_federation_get_init_probe_request = staticmethod(_is_module_federation_get_init_probe_request)
-    _is_module_federation_factory_invoke_request = staticmethod(_is_module_federation_factory_invoke_request)
-    _is_module_federation_export_hook_install_request = staticmethod(_is_module_federation_export_hook_install_request)
-    _is_module_federation_export_hook_plan_request = staticmethod(_is_module_federation_export_hook_plan_request)
-    _is_custom_loader_execution_request = staticmethod(_is_custom_loader_execution_request)
-    _is_custom_loader_continuation_workflow_request = staticmethod(_is_custom_loader_continuation_workflow_request)
-    _is_custom_loader_continuation_execution_request = staticmethod(_is_custom_loader_continuation_execution_request)
-    _is_custom_loader_traversal_workflow_execution_request = staticmethod(_is_custom_loader_traversal_workflow_execution_request)
-    _is_custom_loader_traversal_loop_plan_request = staticmethod(_is_custom_loader_traversal_loop_plan_request)
-    _is_custom_loader_recursive_traversal_plan_request = staticmethod(_is_custom_loader_recursive_traversal_plan_request)
-    _is_custom_loader_recursive_traversal_execution_request = staticmethod(_is_custom_loader_recursive_traversal_execution_request)
-    _is_custom_loader_recursive_traversal_followup_request = staticmethod(_is_custom_loader_recursive_traversal_followup_request)
-    _is_custom_loader_traversal_loop_execution_request = staticmethod(_is_custom_loader_traversal_loop_execution_request)
-    _is_custom_loader_traversal_workflow_plan_request = staticmethod(_is_custom_loader_traversal_workflow_plan_request)
-    _is_custom_loader_traversal_graph_request = staticmethod(_is_custom_loader_traversal_graph_request)
-    _is_custom_loader_continuation_journal_request = staticmethod(_is_custom_loader_continuation_journal_request)
-    _is_custom_loader_execution_preflight_request = staticmethod(_is_custom_loader_execution_preflight_request)
-    _is_custom_loader_traversal_request = staticmethod(_is_custom_loader_traversal_request)
-    _is_async_chunk_traversal_graph_request = staticmethod(_is_async_chunk_traversal_graph_request)
-    _is_async_chunk_recursive_traversal_plan_request = staticmethod(_is_async_chunk_recursive_traversal_plan_request)
-    _is_async_chunk_recursive_traversal_execution_request = staticmethod(_is_async_chunk_recursive_traversal_execution_request)
-    _is_async_chunk_recursive_traversal_followup_request = staticmethod(_is_async_chunk_recursive_traversal_followup_request)
-    _is_async_chunk_traversal_loop_plan_request = staticmethod(_is_async_chunk_traversal_loop_plan_request)
-    _is_async_chunk_traversal_loop_execution_request = staticmethod(_is_async_chunk_traversal_loop_execution_request)
-    _is_async_chunk_traversal_workflow_execution_request = staticmethod(_is_async_chunk_traversal_workflow_execution_request)
-    _is_async_chunk_traversal_workflow_plan_request = staticmethod(_is_async_chunk_traversal_workflow_plan_request)
-    _is_async_chunk_load_request = staticmethod(_is_async_chunk_load_request)
-    _is_async_chunk_module_hook_request = staticmethod(_is_async_chunk_module_hook_request)
-    _is_custom_loader_module_hook_request = staticmethod(_is_custom_loader_module_hook_request)
-    _is_async_chunk_module_diff_request = staticmethod(_is_async_chunk_module_diff_request)
-    _is_custom_loader_module_diff_request = staticmethod(_is_custom_loader_module_diff_request)
-    _is_function_hook_request = staticmethod(_is_function_hook_request)
-    _is_module_hook_request = staticmethod(_is_module_hook_request)
-    _is_object_graph_diff_request = staticmethod(_is_object_graph_diff_request)
-    _is_runtime_object_graph_diff_request = staticmethod(_is_runtime_object_graph_diff_request)
-    _is_object_root_mutation_audit_request = staticmethod(_is_object_root_mutation_audit_request)
-    _is_page_mutation_audit_request = staticmethod(_is_page_mutation_audit_request)
-    _is_flow_timeline_request = staticmethod(_is_flow_timeline_request)
-    _is_mutation_observer_timeline_request = staticmethod(_is_mutation_observer_timeline_request)
-    _is_breakpoint_request = staticmethod(_is_breakpoint_request)
-    _is_paused_session_request = staticmethod(_is_paused_session_request)
-    _is_paused_session_automatic_loop_followup_checkpoint_request = staticmethod(_is_paused_session_automatic_loop_followup_checkpoint_request)
-    _is_paused_session_automatic_loop_next_iteration_followup_checkpoint_request = staticmethod(_is_paused_session_automatic_loop_next_iteration_followup_checkpoint_request)
-    _is_paused_session_automatic_loop_multi_iteration_executor_approval_plan_request = staticmethod(_is_paused_session_automatic_loop_multi_iteration_executor_approval_plan_request)
-    _is_paused_session_automatic_loop_multi_iteration_execution_request = staticmethod(_is_paused_session_automatic_loop_multi_iteration_execution_request)
-    _is_paused_session_automatic_loop_multi_iteration_followup_checkpoint_request = staticmethod(_is_paused_session_automatic_loop_multi_iteration_followup_checkpoint_request)
-    _is_paused_session_automatic_loop_multi_iteration_next_step_plan_request = staticmethod(_is_paused_session_automatic_loop_multi_iteration_next_step_plan_request)
-    _is_paused_session_automatic_loop_multi_iteration_executor_input_preflight_request = staticmethod(_is_paused_session_automatic_loop_multi_iteration_executor_input_preflight_request)
-    _is_paused_session_automatic_loop_multi_iteration_execution_plan_request = staticmethod(_is_paused_session_automatic_loop_multi_iteration_execution_plan_request)
-    _is_paused_session_automatic_loop_multi_iteration_executor_preflight_request = staticmethod(_is_paused_session_automatic_loop_multi_iteration_executor_preflight_request)
-    _is_paused_session_automatic_loop_multi_iteration_policy_request = staticmethod(_is_paused_session_automatic_loop_multi_iteration_policy_request)
-    _is_paused_session_automatic_loop_following_iteration_plan_request = staticmethod(_is_paused_session_automatic_loop_following_iteration_plan_request)
-    _is_paused_session_automatic_loop_next_iteration_execution_request = staticmethod(_is_paused_session_automatic_loop_next_iteration_execution_request)
-    _is_paused_session_automatic_loop_next_iteration_plan_request = staticmethod(_is_paused_session_automatic_loop_next_iteration_plan_request)
+    _is_heap_snapshot_diff_executor_request = staticmethod(_is_heap_snapshot_diff_executor_request)
+    _is_heap_snapshot_diff_executor_transaction_preflight_request = staticmethod(_is_heap_snapshot_diff_executor_transaction_preflight_request)
+    _is_heap_snapshot_diff_followup_checkpoint_request = staticmethod(_is_heap_snapshot_diff_followup_checkpoint_request)
+    _is_heap_snapshot_diff_readiness_request = staticmethod(_is_heap_snapshot_diff_readiness_request)
+    _is_heap_snapshot_diff_selected_analysis_input_preflight_request = staticmethod(_is_heap_snapshot_diff_selected_analysis_input_preflight_request)
+    _is_heap_snapshot_path_to_root_executor_request = staticmethod(_is_heap_snapshot_path_to_root_executor_request)
+    _is_heap_snapshot_path_to_root_proof_plan_request = staticmethod(_is_heap_snapshot_path_to_root_proof_plan_request)
+    _is_heap_snapshot_raw_heap_constructor_drilldown_proof_plan_request = staticmethod(_is_heap_snapshot_raw_heap_constructor_drilldown_proof_plan_request)
+    _is_heap_snapshot_readiness_request = staticmethod(_is_heap_snapshot_readiness_request)
+    _is_heap_snapshot_retained_path_preflight_request = staticmethod(_is_heap_snapshot_retained_path_preflight_request)
+    _is_heap_snapshot_retained_size_approval_plan_request = staticmethod(_is_heap_snapshot_retained_size_approval_plan_request)
+    _is_heap_snapshot_retained_size_bounded_gate_request = staticmethod(_is_heap_snapshot_retained_size_bounded_gate_request)
+    _is_heap_snapshot_retained_size_executor_request = staticmethod(_is_heap_snapshot_retained_size_executor_request)
+    _is_heap_snapshot_retained_size_input_review_request = staticmethod(_is_heap_snapshot_retained_size_input_review_request)
+    _is_heap_snapshot_retained_size_proof_plan_request = staticmethod(_is_heap_snapshot_retained_size_proof_plan_request)
+    _is_heap_snapshot_retained_size_transaction_preflight_request = staticmethod(_is_heap_snapshot_retained_size_transaction_preflight_request)
+
+    _is_paused_session_automatic_loop_execution_plan_request = staticmethod(_is_paused_session_automatic_loop_execution_plan_request)
     _is_paused_session_automatic_loop_execution_request = staticmethod(_is_paused_session_automatic_loop_execution_request)
     _is_paused_session_automatic_loop_executor_approval_plan_request = staticmethod(_is_paused_session_automatic_loop_executor_approval_plan_request)
     _is_paused_session_automatic_loop_executor_preflight_request = staticmethod(_is_paused_session_automatic_loop_executor_preflight_request)
-    _is_paused_session_automatic_loop_execution_plan_request = staticmethod(_is_paused_session_automatic_loop_execution_plan_request)
+    _is_paused_session_automatic_loop_following_iteration_plan_request = staticmethod(_is_paused_session_automatic_loop_following_iteration_plan_request)
+    _is_paused_session_automatic_loop_followup_checkpoint_request = staticmethod(_is_paused_session_automatic_loop_followup_checkpoint_request)
+    _is_paused_session_automatic_loop_multi_iteration_execution_plan_request = staticmethod(_is_paused_session_automatic_loop_multi_iteration_execution_plan_request)
+    _is_paused_session_automatic_loop_multi_iteration_execution_request = staticmethod(_is_paused_session_automatic_loop_multi_iteration_execution_request)
+    _is_paused_session_automatic_loop_multi_iteration_executor_approval_plan_request = staticmethod(_is_paused_session_automatic_loop_multi_iteration_executor_approval_plan_request)
+    _is_paused_session_automatic_loop_multi_iteration_executor_input_preflight_request = staticmethod(_is_paused_session_automatic_loop_multi_iteration_executor_input_preflight_request)
+    _is_paused_session_automatic_loop_multi_iteration_executor_preflight_request = staticmethod(_is_paused_session_automatic_loop_multi_iteration_executor_preflight_request)
+    _is_paused_session_automatic_loop_multi_iteration_followup_checkpoint_request = staticmethod(_is_paused_session_automatic_loop_multi_iteration_followup_checkpoint_request)
+    _is_paused_session_automatic_loop_multi_iteration_next_step_plan_request = staticmethod(_is_paused_session_automatic_loop_multi_iteration_next_step_plan_request)
+    _is_paused_session_automatic_loop_multi_iteration_policy_request = staticmethod(_is_paused_session_automatic_loop_multi_iteration_policy_request)
+    _is_paused_session_automatic_loop_next_iteration_execution_request = staticmethod(_is_paused_session_automatic_loop_next_iteration_execution_request)
+    _is_paused_session_automatic_loop_next_iteration_followup_checkpoint_request = staticmethod(_is_paused_session_automatic_loop_next_iteration_followup_checkpoint_request)
+    _is_paused_session_automatic_loop_next_iteration_plan_request = staticmethod(_is_paused_session_automatic_loop_next_iteration_plan_request)
     _is_paused_session_automatic_loop_readiness_request = staticmethod(_is_paused_session_automatic_loop_readiness_request)
-    _is_paused_session_multi_step_loop_execution_request = staticmethod(_is_paused_session_multi_step_loop_execution_request)
-    _is_paused_session_multi_step_loop_plan_request = staticmethod(_is_paused_session_multi_step_loop_plan_request)
+    _is_paused_session_cross_process_attach_probe_request = staticmethod(_is_paused_session_cross_process_attach_probe_request)
+    _is_paused_session_cross_process_continuation_checkpoint_request = staticmethod(_is_paused_session_cross_process_continuation_checkpoint_request)
+    _is_paused_session_cross_process_execution_plan_request = staticmethod(_is_paused_session_cross_process_execution_plan_request)
+    _is_paused_session_cross_process_one_action_request = staticmethod(_is_paused_session_cross_process_one_action_request)
     _is_paused_session_cross_process_session_lifecycle_request = staticmethod(_is_paused_session_cross_process_session_lifecycle_request)
+    _is_paused_session_live_callframe_recovery_request = staticmethod(_is_paused_session_live_callframe_recovery_request)
+    _is_paused_session_live_continuation_preflight_request = staticmethod(_is_paused_session_live_continuation_preflight_request)
     _is_paused_session_multi_step_continuation_execution_request = staticmethod(_is_paused_session_multi_step_continuation_execution_request)
     _is_paused_session_multi_step_continuation_workflow_request = staticmethod(_is_paused_session_multi_step_continuation_workflow_request)
-    _is_paused_session_pre_action_subscribe_and_action_request = staticmethod(_is_paused_session_pre_action_subscribe_and_action_request)
-    _is_paused_session_cross_process_continuation_checkpoint_request = staticmethod(_is_paused_session_cross_process_continuation_checkpoint_request)
+    _is_paused_session_multi_step_loop_execution_request = staticmethod(_is_paused_session_multi_step_loop_execution_request)
+    _is_paused_session_multi_step_loop_plan_request = staticmethod(_is_paused_session_multi_step_loop_plan_request)
     _is_paused_session_next_paused_event_capture_execution_request = staticmethod(_is_paused_session_next_paused_event_capture_execution_request)
     _is_paused_session_next_paused_event_capture_plan_request = staticmethod(_is_paused_session_next_paused_event_capture_plan_request)
-    _is_paused_session_cross_process_one_action_request = staticmethod(_is_paused_session_cross_process_one_action_request)
-    _is_paused_session_live_callframe_recovery_request = staticmethod(_is_paused_session_live_callframe_recovery_request)
-    _is_paused_session_cross_process_attach_probe_request = staticmethod(_is_paused_session_cross_process_attach_probe_request)
-    _is_paused_session_cross_process_execution_plan_request = staticmethod(_is_paused_session_cross_process_execution_plan_request)
-    _is_paused_session_live_continuation_preflight_request = staticmethod(_is_paused_session_live_continuation_preflight_request)
+    _is_paused_session_pre_action_subscribe_and_action_request = staticmethod(_is_paused_session_pre_action_subscribe_and_action_request)
+    _is_paused_session_request = staticmethod(_is_paused_session_request)
     _is_paused_session_target_attach_readiness_request = staticmethod(_is_paused_session_target_attach_readiness_request)
-    _is_source_map_fetch_request = staticmethod(_is_source_map_fetch_request)
-    _is_source_map_lookup_request = staticmethod(_is_source_map_lookup_request)
-    _is_source_map_source_content_request = staticmethod(_is_source_map_source_content_request)
-    _is_source_map_typed_payload_preflight_request = staticmethod(_is_source_map_typed_payload_preflight_request)
-    _is_source_map_followthrough_dispatcher_result_request = staticmethod(_is_source_map_followthrough_dispatcher_result_request)
-    _is_source_map_followthrough_dispatcher_apply_preflight_request = staticmethod(_is_source_map_followthrough_dispatcher_apply_preflight_request)
-    _is_source_map_followthrough_dispatcher_handoff_request = staticmethod(_is_source_map_followthrough_dispatcher_handoff_request)
-    _is_source_map_followthrough_dispatch_bounded_executor_gate_request = staticmethod(_is_source_map_followthrough_dispatch_bounded_executor_gate_request)
-    _is_source_map_followthrough_dispatch_transaction_preflight_request = staticmethod(_is_source_map_followthrough_dispatch_transaction_preflight_request)
-    _is_source_map_followthrough_dispatch_approval_plan_request = staticmethod(_is_source_map_followthrough_dispatch_approval_plan_request)
-    _is_source_map_followthrough_dispatch_preflight_request = staticmethod(_is_source_map_followthrough_dispatch_preflight_request)
-    _is_source_map_followthrough_one_step_plan_request = staticmethod(_is_source_map_followthrough_one_step_plan_request)
-    _is_source_map_followthrough_chain_readiness_request = staticmethod(_is_source_map_followthrough_chain_readiness_request)
-    _is_source_map_followthrough_review_request = staticmethod(_is_source_map_followthrough_review_request)
-    _is_source_map_selected_executor_input_review_request = staticmethod(_is_source_map_selected_executor_input_review_request)
-    _is_source_map_selected_executor_apply_preflight_request = staticmethod(_is_source_map_selected_executor_apply_preflight_request)
-    _is_source_map_selected_executor_application_handoff_request = staticmethod(_is_source_map_selected_executor_application_handoff_request)
-    _is_source_map_terminal_review_package_request = staticmethod(_is_source_map_terminal_review_package_request)
-    _is_source_map_terminal_review_closure_checkpoint_request = staticmethod(_is_source_map_terminal_review_closure_checkpoint_request)
-    _is_source_map_terminal_review_final_audit_request = staticmethod(_is_source_map_terminal_review_final_audit_request)
-    _is_source_map_followthrough_completion_checkpoint_request = staticmethod(_is_source_map_followthrough_completion_checkpoint_request)
-    _is_source_map_selected_executor_result_checkpoint_request = staticmethod(_is_source_map_selected_executor_result_checkpoint_request)
-    _is_source_map_debugger_application_request = staticmethod(_is_source_map_debugger_application_request)
-    _is_source_map_source_logpoint_application_request = staticmethod(_is_source_map_source_logpoint_application_request)
-    _is_source_map_rebuild_metadata_application_request = staticmethod(_is_source_map_rebuild_metadata_application_request)
-    _is_source_map_rebuild_generation_request = staticmethod(_is_source_map_rebuild_generation_request)
-    _is_source_map_hook_application_request = staticmethod(_is_source_map_hook_application_request)
-    _is_source_map_hook_candidate_selection_request = staticmethod(_is_source_map_hook_candidate_selection_request)
-    _is_source_map_hook_candidate_refinement_request = staticmethod(_is_source_map_hook_candidate_refinement_request)
-    _is_source_map_debugger_candidate_review_request = staticmethod(_is_source_map_debugger_candidate_review_request)
-    _is_source_map_debugger_candidate_selection_request = staticmethod(_is_source_map_debugger_candidate_selection_request)
-    _is_source_map_selected_executor_approval_plan_request = staticmethod(_is_source_map_selected_executor_approval_plan_request)
-    _is_source_map_followthrough_surface_selection_request = staticmethod(_is_source_map_followthrough_surface_selection_request)
-    _is_source_map_consumer_materialization_request = staticmethod(_is_source_map_consumer_materialization_request)
-    _is_source_map_consumer_action_plan_request = staticmethod(_is_source_map_consumer_action_plan_request)
-    _is_source_map_readiness_request = staticmethod(_is_source_map_readiness_request)
+
+    _is_closure_scope_discovery_request = staticmethod(_is_closure_scope_discovery_request)
+    _is_closure_wrapper_assignment_safety_request = staticmethod(_is_closure_wrapper_assignment_safety_request)
+    _is_closure_wrapper_continuation_checkpoint_request = staticmethod(_is_closure_wrapper_continuation_checkpoint_request)
+    _is_closure_wrapper_continuation_execution_plan_request = staticmethod(_is_closure_wrapper_continuation_execution_plan_request)
+    _is_closure_wrapper_continuation_execution_request = staticmethod(_is_closure_wrapper_continuation_execution_request)
+    _is_closure_wrapper_continuation_next_iteration_execution_request = staticmethod(_is_closure_wrapper_continuation_next_iteration_execution_request)
+    _is_closure_wrapper_continuation_next_iteration_plan_request = staticmethod(_is_closure_wrapper_continuation_next_iteration_plan_request)
+    _is_closure_wrapper_continuation_readiness_request = staticmethod(_is_closure_wrapper_continuation_readiness_request)
+    _is_closure_wrapper_event_harvest_request = staticmethod(_is_closure_wrapper_event_harvest_request)
+    _is_closure_wrapper_replacement_execution_request = staticmethod(_is_closure_wrapper_replacement_execution_request)
+    _is_closure_wrapper_replacement_plan_request = staticmethod(_is_closure_wrapper_replacement_plan_request)
+    _is_closure_wrapper_restore_execution_request = staticmethod(_is_closure_wrapper_restore_execution_request)
+    _is_closure_wrapper_runtime_mutability_preflight_request = staticmethod(_is_closure_wrapper_runtime_mutability_preflight_request)
+    _is_closure_wrapper_runtime_mutability_result_request = staticmethod(_is_closure_wrapper_runtime_mutability_result_request)
+
+    _is_async_chunk_load_request = staticmethod(_is_async_chunk_load_request)
+    _is_async_chunk_module_diff_request = staticmethod(_is_async_chunk_module_diff_request)
+    _is_async_chunk_module_hook_request = staticmethod(_is_async_chunk_module_hook_request)
+    _is_async_chunk_recursive_traversal_execution_request = staticmethod(_is_async_chunk_recursive_traversal_execution_request)
+    _is_async_chunk_recursive_traversal_followup_request = staticmethod(_is_async_chunk_recursive_traversal_followup_request)
+    _is_async_chunk_recursive_traversal_plan_request = staticmethod(_is_async_chunk_recursive_traversal_plan_request)
+    _is_async_chunk_traversal_graph_request = staticmethod(_is_async_chunk_traversal_graph_request)
+    _is_async_chunk_traversal_loop_execution_request = staticmethod(_is_async_chunk_traversal_loop_execution_request)
+    _is_async_chunk_traversal_loop_plan_request = staticmethod(_is_async_chunk_traversal_loop_plan_request)
+    _is_async_chunk_traversal_workflow_execution_request = staticmethod(_is_async_chunk_traversal_workflow_execution_request)
+    _is_async_chunk_traversal_workflow_plan_request = staticmethod(_is_async_chunk_traversal_workflow_plan_request)
+    _is_custom_loader_continuation_execution_request = staticmethod(_is_custom_loader_continuation_execution_request)
+    _is_custom_loader_continuation_journal_request = staticmethod(_is_custom_loader_continuation_journal_request)
+    _is_custom_loader_continuation_workflow_request = staticmethod(_is_custom_loader_continuation_workflow_request)
+    _is_custom_loader_execution_preflight_request = staticmethod(_is_custom_loader_execution_preflight_request)
+    _is_custom_loader_execution_request = staticmethod(_is_custom_loader_execution_request)
+    _is_custom_loader_module_diff_request = staticmethod(_is_custom_loader_module_diff_request)
+    _is_custom_loader_module_hook_request = staticmethod(_is_custom_loader_module_hook_request)
+    _is_custom_loader_recursive_traversal_execution_request = staticmethod(_is_custom_loader_recursive_traversal_execution_request)
+    _is_custom_loader_recursive_traversal_followup_request = staticmethod(_is_custom_loader_recursive_traversal_followup_request)
+    _is_custom_loader_recursive_traversal_plan_request = staticmethod(_is_custom_loader_recursive_traversal_plan_request)
+    _is_custom_loader_traversal_graph_request = staticmethod(_is_custom_loader_traversal_graph_request)
+    _is_custom_loader_traversal_loop_execution_request = staticmethod(_is_custom_loader_traversal_loop_execution_request)
+    _is_custom_loader_traversal_loop_plan_request = staticmethod(_is_custom_loader_traversal_loop_plan_request)
+    _is_custom_loader_traversal_request = staticmethod(_is_custom_loader_traversal_request)
+    _is_custom_loader_traversal_workflow_execution_request = staticmethod(_is_custom_loader_traversal_workflow_execution_request)
+    _is_custom_loader_traversal_workflow_plan_request = staticmethod(_is_custom_loader_traversal_workflow_plan_request)
+    _is_module_federation_export_hook_install_request = staticmethod(_is_module_federation_export_hook_install_request)
+    _is_module_federation_export_hook_plan_request = staticmethod(_is_module_federation_export_hook_plan_request)
+    _is_module_federation_factory_invoke_request = staticmethod(_is_module_federation_factory_invoke_request)
+    _is_module_federation_get_init_probe_request = staticmethod(_is_module_federation_get_init_probe_request)
+    _is_module_federation_get_init_request = staticmethod(_is_module_federation_get_init_request)
+    _is_module_federation_recursive_continuation_checkpoint_request = staticmethod(_is_module_federation_recursive_continuation_checkpoint_request)
+    _is_module_federation_recursive_continuation_journal_request = staticmethod(_is_module_federation_recursive_continuation_journal_request)
+    _is_module_federation_recursive_traversal_execution_request = staticmethod(_is_module_federation_recursive_traversal_execution_request)
+    _is_module_federation_recursive_traversal_followup_request = staticmethod(_is_module_federation_recursive_traversal_followup_request)
+    _is_module_federation_recursive_traversal_plan_request = staticmethod(_is_module_federation_recursive_traversal_plan_request)
+    _is_module_federation_traversal_graph_request = staticmethod(_is_module_federation_traversal_graph_request)
+    _is_module_federation_traversal_workflow_execution_request = staticmethod(_is_module_federation_traversal_workflow_execution_request)
+    _is_module_federation_traversal_workflow_plan_request = staticmethod(_is_module_federation_traversal_workflow_plan_request)
+    _is_module_hook_request = staticmethod(_is_module_hook_request)
+
+    _is_object_graph_diff_request = staticmethod(_is_object_graph_diff_request)
+    _is_object_root_mutation_audit_request = staticmethod(_is_object_root_mutation_audit_request)
+    _is_page_mutation_audit_request = staticmethod(_is_page_mutation_audit_request)
+    _is_runtime_object_graph_diff_request = staticmethod(_is_runtime_object_graph_diff_request)
+
+    _is_breakpoint_request = staticmethod(_is_breakpoint_request)
     _is_bundler_symbol_scope_request = staticmethod(_is_bundler_symbol_scope_request)
+    _is_flow_timeline_request = staticmethod(_is_flow_timeline_request)
+    _is_function_hook_request = staticmethod(_is_function_hook_request)
+    _is_module_discovery_request = staticmethod(_is_module_discovery_request)
+    _is_mutation_observer_timeline_request = staticmethod(_is_mutation_observer_timeline_request)
+    _is_recursive_continuation_readiness_request = staticmethod(_is_recursive_continuation_readiness_request)
     _is_source_logpoint_request = staticmethod(_is_source_logpoint_request)
 
