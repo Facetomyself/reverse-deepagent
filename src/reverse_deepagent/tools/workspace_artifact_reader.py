@@ -357,13 +357,22 @@ def _artifact_ref_to_filesystem_path(root: Path, value: str) -> Path:
         netloc = parsed.netloc.strip("/")
         path = parsed.path.strip("/")
         relative = "/".join(part for part in (netloc, path) if part)
-        return root / relative
+        return (root / relative).resolve()
     if value.startswith("/workspace/"):
-        return root / value.lstrip("/")
+        return (root / value.lstrip("/")).resolve()
     path = Path(value)
+    resolved_root = root.resolve()
     if path.is_absolute():
-        return path
-    return root / path
+        resolved = path.resolve()
+    else:
+        resolved = (root / path).resolve()
+    # Path traversal guard: resolved path must stay within artifact root
+    if resolved != resolved_root and resolved_root not in resolved.parents:
+        raise ValueError(
+            f"Artifact path {value!r} resolves outside workspace root; "
+            f"resolved={resolved} root={resolved_root}"
+        )
+    return resolved
 
 
 def _artifact_ref_kind(artifact_ref: str, resolution: WorkspacePathResolution | None) -> str:
