@@ -287,58 +287,6 @@ These packages are part of the MCP deprecation seam: new browser integrations sh
 
 The template provider intentionally never publishes externally: dry-run returns a reviewable plan for a valid local delivery package, while apply mode returns a structured blocker until an integrator replaces `deliver()` with real SDK / HTTP publication logic. New S3 / OSS / GCS / GitLab Release / internal release-system providers should start from this package, preserve dry-run side-effect freedom, keep capability metadata non-secret, and let core duplicate-guard / idempotency / review gates remain authoritative unless an explicit reviewed provider design says otherwise.
 
-## 5.2 Browser Runtime Subagent baseline
-
-`browser_runtime` is now an implemented DeepAgents subagent boundary for BrowserProvider-facing work. It exposes side-effect-free provider metadata tools by default:
-
-- `list_browser_providers` returns the registry-driven provider matrix, entry point group, registration metadata, registered provider ids, and side-effect policy.
-- `describe_browser_provider` resolves a provider id or alias and returns capability metadata without launching a browser, probing CDP, invoking external provider factories, or touching MCP.
-- `ensure_browser_session` is only attached when a Web runtime object is provided, so session readiness checks stay explicit and runtime-scoped.
-
-This subagent does not perform Web recon, source search, network sampling, hook installation, breakpoint work, or protection patching. Those responsibilities remain with `web_recon` and `protector`; `browser_runtime` only owns provider capability discovery and browser session health boundaries.
-
-## 5.3 Debugger Subagent baseline
-
-`debugger` is now an implemented DeepAgents subagent boundary for debugger / paused-session artifact review. It exposes `review_debugger_artifacts`, a read-only tool that consumes existing debugger artifacts such as `debugger-session.json`, `debugger-timeline.json`, `debugger-paused.json`, `callframes.json`, `callframe-evaluations.json`, `mutation-audit.json`, and `debugger-actions.json`.
-
-The debugger tool summarizes paused-session status, continuation preflight source / status / requested action, callframe counts, top callframes, callframe evaluations, mutation audit records, debugger actions, and timeline event counts. It detects action-blocked durable snapshots, missing artifacts, unavailable paused sessions, debugger failures, and paused sessions without callframes. It does not connect CDP, resume, step, evaluate callframes, install breakpoints or hooks, write debugger artifacts, mutate runtime state, or trigger delivery.
-
-## 5.4 Hook Subagent baseline
-
-`hook` is now an implemented DeepAgents subagent boundary for hook artifact review. It exposes `review_hook_artifacts`, a read-only tool that consumes existing function hook, module hook, generic hook timeline, source-logpoint, and hook candidate artifacts such as `function-hooks.json`, `function-hook-timeline.json`, `module-hooks.json`, `module-hook-timeline.json`, `hook-timeline.json`, and `source-logpoints.json`.
-
-The hook tool summarizes installed function / module hooks, source-logpoint counts, missing targets, candidates, timeline event counts, event type counts, and installed target paths. It detects hook failures, missing hook targets, installed hooks without captured events, and candidates that have not yet been installed. It does not execute Web recon, install hooks, install breakpoints or logpoints, evaluate JavaScript, invoke target functions, write hook artifacts, mutate runtime state, or trigger delivery.
-
-## 5.5 Timeline Subagent baseline
-
-`timeline` is now an implemented DeepAgents subagent boundary for flow-timeline review. It exposes `review_flow_timeline`, a read-only tool that consumes an existing `flow-timeline.json` payload and summarizes entries, source counts, correlation group readiness, stitch candidates, stitch proposals, auto-stitch dry-runs, conflict resolutions, policy decisions, materialization plans / results, and rollback plan / result counts.
-
-The timeline tool detects pending stitch proposals, blocked policy decisions, unresolved conflicts, and materialization requests without approval. It returns `status`, `blockers`, `warnings`, `review_required_items`, `next_action`, and an explicit side-effect policy. It does not run recon, install hooks, set breakpoints, write timeline artifacts, generate `stitched-flow.json`, record review decisions, execute rollback, or trigger delivery.
-
-## 5.6 Review Subagent baseline
-
-`review` is now an implemented DeepAgents subagent boundary for delivery-readiness review. It exposes `evaluate_delivery_review_gate`, a read-only tool that consumes `RebuildResult` JSON plus optional `EvidencePromotionResult` JSON, delegates to `evaluate_review_gate(...)`, and returns the normalized gate result with an explicit side-effect policy. The tool does not write artifacts, mutate files, execute local delivery, call external delivery providers, or record approval decisions.
-
-This subagent owns risk / warning review hints, evidence-level review requirements, and delivery gate next-action summaries. Pending stitch proposals remain blocked with `next_action=review_stitch_proposals_before_delivery` until explicit reviewer-approved materialization data exists; the subagent cannot approve proposals, rollback plans, materialization plans, or delivery by itself.
-
-## 5.7 Rebuild Subagent baseline
-
-`rebuild` is now an implemented DeepAgents subagent boundary for rebuild generation and rebuild artifact review. It owns `build_rebuild_delivery` plus `review_rebuild_artifacts`; the former writes `workspace/rebuild-plan.json` and generated rebuild files under the configured artifact root, while the latter is read-only and summarizes RebuildResult / rebuild-plan readiness, generated files, review hints, runtime-assisted recommendations, declared outputs, and next actions.
-
-This split leaves the `delivery` subagent focused on local delivery, backend manifest mutation, recovery, transaction commit, and external delivery provider requests. Rebuild can generate and review pure / context-aware / Scrapy replay artifacts, but it does not execute local delivery, mutate manifests, publish external releases, or bypass review gates.
-
-## 5.8 WorkspacePathResolver baseline
-
-`WorkspacePathResolver` is now the compatibility layer between existing flat `workspace/*.json` artifacts and the DeepAgents virtual folder contract. It resolves artifacts by canonical key, legacy path, future foldered path, or `virtual://workspace/...` URI while keeping the legacy flat path authoritative by default.
-
-The resolver introduces an opt-in dual-write writer seam. `WorkspacePathResolver(enable_dual_write=True)` returns both the legacy canonical path and foldered future path in `write_paths`; the deterministic Web and platform pipelines expose `enable_workspace_dual_write=True` to actually write both physical paths under the artifact root and emit `workspace/workspace-dual-write-plan.json` as an audit record. The legacy flat path remains authoritative, existing artifacts are not moved, and full physical migration remains a separate follow-up.
-
-## 5.9 BrowserProvider plugin package template
-
-`packages/reverse-deepagent-browser-provider-template/` is the copy-and-replace package template for external BrowserProvider integrations. It declares the `reverse_deepagent.browser_providers` entry point and returns a `BrowserProviderRegistration` for `template-browser` without calling the provider factory. The template provider is intentionally runtime-unavailable: `start()` and `connect()` raise `BrowserProviderUnavailableError` until an integrator replaces them with real launch / attach code.
-
-The template is part of the MCP deprecation seam: new browser integrations should land as packages that expose registration metadata and provider factories, not as new `if/else` branches in `NativeWebRuntime` or the coordinator. The hard requirements are the same as the registry contract: metadata loading is side-effect free, capability config is non-secret, optional browser SDK imports are delayed, and real launch / CDP probing only happens behind explicit runtime or doctor smoke paths.
-
 ## 6. Provider candidates
 
 | Provider | Purpose | Notes |

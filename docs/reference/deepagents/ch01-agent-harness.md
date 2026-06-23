@@ -88,7 +88,7 @@ Deep Agents 就是这样一个 Harness。它利用 LangChain 的核心构建块�
 
 三者不是互相替代的关系，而是自底向上层层构建。LangGraph 是底层运行时，LangChain 构建在 LangGraph 之上提供更高层抽象，Deep Agents 则在两者之上提供开箱即用的 Agent 能力。你可以根据需求选择在不同层次上工作——需要最大灵活性就直接用 LangGraph，需要快速开发就用 LangChain，需要解决复杂任务就用 Deep Agents。
 
-![Agent 开发三层架构：底层 LangGraph (Runtime)、中间层 LangChain (Framework)、上层 Deep Agents (Harness)，侧边 LangSmith 贯穿提供可观测性](../public/imgs/01-framework-three-layer-architecture.png)
+> 图示占位：Agent 开发三层架构：底层 LangGraph (Runtime)、中间层 LangChain (Framework)、上层 Deep Agents (Harness)，侧边 LangSmith 贯穿提供可观测性（原外部图片资源 `../public/imgs/01-framework-three-layer-architecture.png` 未纳入本仓库，避免保留坏链接。）
 
 ## 为什么需要 Agent Harness？
 
@@ -146,7 +146,7 @@ Deep Agents 的解决方案是引入一个**虚拟文件系统**，让 Agent 像
 
 这就是 Context Engineering——**不是把所有信息都喂给 LLM，而是为 LLM 构建一个高效获取和管理信息的基础设施**。
 
-![Context Engineering 对比：左侧传统 Prompt Stuffing 导致上下文溢出、注意力稀释、不可扩展；右侧 Deep Agents 通过虚拟文件系统按需读取，实现结构化存储和无限扩展](../public/imgs/02-comparison-context-engineering.png)
+> 图示占位：Context Engineering 对比：左侧传统 Prompt Stuffing 导致上下文溢出、注意力稀释、不可扩展；右侧 Deep Agents 通过虚拟文件系统按需读取，实现结构化存储和无限扩展（原外部图片资源 `../public/imgs/02-comparison-context-engineering.png` 未纳入本仓库，避免保留坏链接。）
 
 ## Deep Agents vs 竞品对比
 
@@ -188,7 +188,7 @@ Deep Agents 的解决方案是引入一个**虚拟文件系统**，让 Agent 像
 - 内置 MCP Server 模式
 - 云端执行环境
 
-![三大 Agent Harness 对比：Deep Agents（模型无关、虚拟文件系统、长期记忆）、Claude Agent SDK（Claude 深度集成、Hooks 系统）、Codex SDK（OS 级沙箱、MCP Server 模式），共同能力包括文件读写、Shell 执行、规划、子 Agent 等](../public/imgs/03-comparison-harness-competitors.png)
+> 图示占位：三大 Agent Harness 对比：Deep Agents（模型无关、虚拟文件系统、长期记忆）、Claude Agent SDK（Claude 深度集成、Hooks 系统）、Codex SDK（OS 级沙箱、MCP Server 模式），共同能力包括文件读写、Shell 执行、规划、子 Agent 等（原外部图片资源 `../public/imgs/03-comparison-harness-competitors.png` 未纳入本仓库，避免保留坏链接。）
 
 ### 如何选择？
 
@@ -201,7 +201,7 @@ Deep Agents 的解决方案是引入一个**虚拟文件系统**，让 Agent 像
 
 最后，我们用一张图来总结 Deep Agents 在整个 LangChain 生态中的位置：
 
-![Deep Agents 技术全景图：顶层 Deep Agents (Harness) 包含文件系统工具、任务规划、子 Agent、可插拔存储后端、长期记忆五大模块；中间层 LangChain (Framework) 和 LangGraph (Runtime)；底层 LangSmith 提供可观测性](../public/imgs/04-framework-tech-panorama.png)
+> 图示占位：Deep Agents 技术全景图：顶层 Deep Agents (Harness) 包含文件系统工具、任务规划、子 Agent、可插拔存储后端、长期记忆五大模块；中间层 LangChain (Framework) 和 LangGraph (Runtime)；底层 LangSmith 提供可观测性（原外部图片资源 `../public/imgs/04-framework-tech-panorama.png` 未纳入本仓库，避免保留坏链接。）
 
 ## 小结
 
