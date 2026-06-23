@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from reverse_deepagent.tools.artifact_tools import (
+from reverse_deepagent.tools.workspace_dual_write_pilot import (
     make_plan_workspace_dual_write_pilot_tool,
     make_record_workspace_dual_write_pilot_result_tool,
     make_review_workspace_dual_write_pilot_workflow_tool,

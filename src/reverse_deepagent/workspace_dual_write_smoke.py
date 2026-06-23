@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Sequence
 
 from reverse_deepagent.coordinator import run_reverse_pipeline
-from reverse_deepagent.tools.artifact_tools import review_workspace_dual_write_pilot_workflow_payload
+from reverse_deepagent.tools.workspace_dual_write_pilot import review_workspace_dual_write_pilot_workflow_payload
 
 DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ARTIFACT_ROOT = DEFAULT_REPO_ROOT / "artifacts" / "workspace-dual-write-pilot-smoke"
