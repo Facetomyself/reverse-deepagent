@@ -60,8 +60,6 @@ jobs:
       CHROME_DEBUG_PORT: ${{ inputs.chrome_debug_port || '9461' }}
       CHROME_PATH: ${{ inputs.chrome_path || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' }}
       JSREVERSER_MCP_PATH: ${{ inputs.jsreverser_mcp_path || '/opt/homebrew/bin/jsreverser-mcp' }}
-      MCP_ARTIFACT_ROOT: ${{ runner.temp }}/reverse-agent-mcp
-      CHROME_USER_DATA_ROOT: ${{ runner.temp }}/reverse-agent-chrome
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -69,6 +67,14 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Configure runner temp paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "MCP_ARTIFACT_ROOT=$RUNNER_TEMP/reverse-agent-mcp"
+            echo "CHROME_USER_DATA_ROOT=$RUNNER_TEMP/reverse-agent-chrome"
+          } >> "$GITHUB_ENV"
       - name: Preflight self-hosted dependencies
         shell: bash
         run: |

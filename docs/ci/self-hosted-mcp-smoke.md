@@ -19,6 +19,7 @@ The `MCP Integration` workflow runs `reverse-agent-fixture-smoke` against the bu
 - a selected fixture profile or a named `profile_set` batch
 - a temporary Chrome user-data directory under `$RUNNER_TEMP`
 - a temporary artifact root under `$RUNNER_TEMP`
+- runtime export of both temporary paths through `$GITHUB_ENV`, after the runner job has started
 - artifact upload for generated smoke output and JSON summaries
 - `$GITHUB_STEP_SUMMARY` entries for preflight and per-profile results
 
